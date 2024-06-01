@@ -97,7 +97,7 @@ class lstmKerasModel:
             nn.LSTM(code_size, n_neurons, batch_first=True, return_sequences=True),
             nn.LSTM(n_neurons, n_neurons, batch_first=True, return_sequences=True),
             nn.LSTM(n_neurons, code_size, batch_first=True, return_sequences=True),
-            nn.Linear(code_size, code_size)
+            nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
         )
         return lstm_model
 
