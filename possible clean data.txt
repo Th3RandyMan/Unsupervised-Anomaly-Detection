@@ -1,0 +1,11 @@
+P19V1_F5.csv az1, az2 (probably needs truncation)
+P19V2_F5.csv az1, ay2, az2, maybe gx2, gy2
+P20V1_20.csv maybe ay1, az1, ax2, gz2
+P20V1_F5, a lot of them
+P20V1_L5, ay1, az1, maybe gx2
+P20V2_F5, ax1, ay1, az1, gy1, gx2, gz2
+
+I feel like generating clean data might be a good idea. Just letting it sit for awhile, maybe letting it sit on a breathing person for awhile.
+
+I guess I have the means to do that.
+
