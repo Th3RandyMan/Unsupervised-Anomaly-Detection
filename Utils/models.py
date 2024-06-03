@@ -33,23 +33,23 @@ class VAE(nn.Module):
         diff = (self.input_dims - self.latent_dims * 4)//4
         if diff < 0:
             raise ValueError("The latent space is too large for the input size.")
-        if diff % 2 != 0:
+        if diff % 2 != 0:   # Maybe remove this
             diff += 1
         
         # Encoder Structure:
         self.encoder = nn.Sequential(
-            nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, 
+            nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, # Shape (1, 100)
                       padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
             nn.LeakyReLU(),
-            nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, 
+            nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, # Shape (32, 80)
                       padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, 
+            nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, # Shape (64, 60)
                       padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,
+            nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,   # Shape (128, 40)
                       padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(), # Shape (512, 24)
             nn.Flatten(),    # Flatten the output to a 1D tensor
             nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
             nn.LeakyReLU()
@@ -67,19 +67,20 @@ class VAE(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(self.latent_dims * 4, n_kernels * self.latent_dims * 4),
             nn.LeakyReLU(),
-            nn.Unflatten(1, (n_kernels, self.latent_dims * 4)),
-            nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,
+            nn.Unflatten(1, (n_kernels, self.latent_dims * 4)), # Shape (512, 24)
+            nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,  # Shape (128, 40)
                                padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
             nn.LeakyReLU(),
-            nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2,
+            nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2, output_padding=1, # Shape (32, 60)  # output_padding=1 to fix the output size
                                padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2,
+            nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2, output_padding=1,   # Shape (8, 80)
                                padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2,
+            nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2, output_padding=1,   # Shape (1, 100)
                                padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
             # nn.Sigmoid()
+            # Shape (1, 100)
         )
 
         self.sigma2 = nn.Parameter(torch.tensor(sigma)**2 + sigma2_offset)
@@ -97,6 +98,7 @@ class VAE(nn.Module):
         decoded = self.decoder(code_sample) # Decode the sample
         return code_mean, code_std_dev, code_sample, decoded
     
+    # Add training and loss methods
 
 
 
