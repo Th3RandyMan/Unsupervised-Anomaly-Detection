@@ -29,7 +29,9 @@ def force_padding(input_size:int, output_size:int, kernel_size:int, stride:int=1
     Returns:
         int: Padding required to force the output size.
     """
-    pad = int(np.ceil((output_size - 1) * stride - input_size + dilation * (kernel_size - 1) + 1) / 2)
+    # pad = int(np.ceil((output_size - 1) * stride - input_size + dilation * (kernel_size - 1) + 1) / 2)
+    pad = int(np.ceil(np.ceil((output_size - 1) * stride - input_size + dilation * (kernel_size - 1) + 1) / 2))
+    # pad = round(np.ceil((output_size - 1) * stride - input_size + dilation * (kernel_size - 1) + 1) / 2)
     if pad < 0:
         raise ValueError("Padding cannot be negative.")
     return pad

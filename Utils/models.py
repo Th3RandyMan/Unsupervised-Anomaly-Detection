@@ -31,6 +31,11 @@ class VAE(nn.Module):
         # init = nn.init.xavier_uniform_
 
         diff = (self.input_dims - self.latent_dims * 4)//4
+        if diff < 0:
+            raise ValueError("The latent space is too large for the input size.")
+        if diff % 2 != 0:
+            diff += 1
+        
         # Encoder Structure:
         self.encoder = nn.Sequential(
             nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, 
@@ -43,7 +48,7 @@ class VAE(nn.Module):
                       padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
             nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,
-                      padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
+                      padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
             nn.LeakyReLU(),
             nn.Flatten(),    # Flatten the output to a 1D tensor
             nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
@@ -88,7 +93,8 @@ class VAE(nn.Module):
         code_std_dev = torch.relu(code_std_dev) + 1e-2      # Bias the std
         mvn = tdist.MultivariateNormal(code_mean, torch.diag_embed(code_std_dev)) # Create a multivariate normal distribution
         code_sample = mvn.sample()  # Sample from the distribution
-        decoded = self.decoder(code_sample.unsqueeze(-1).unsqueeze(-1)) # Decode the sample
+        #decoded = self.decoder(code_sample.unsqueeze(-1).unsqueeze(-1)) # Decode the sample
+        decoded = self.decoder(code_sample) # Decode the sample
         return code_mean, code_std_dev, code_sample, decoded
     
 
