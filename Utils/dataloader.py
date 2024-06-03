@@ -1,6 +1,7 @@
 from copy import deepcopy
 from typing import Dict, Optional, Tuple
 from pandas import DataFrame
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -10,14 +11,14 @@ class DataLoaderGenerator:
     """
     def __init__(
             self, 
-            data:DataFrame=None, 
+            data=None, 
             batch_size:int=32,
             data_loader_params:Optional[Dict] = None,
             device: torch.device = torch.device('cpu')
-            ) -> Tuple[DataLoader, DataLoader]:
+            ):
         """
         Args:
-            data (DataFrame): Data to be used for training and validation.
+            data: Data to be used for training and validation.
             batch_size (int): Batch size for DataLoader objects.
             data_loader_params (Dict): Additional parameters for DataLoader objects.
             device (torch.device): Device to be used for training.
@@ -30,18 +31,18 @@ class DataLoaderGenerator:
         self.device = device
 
         if self.data_loader_params is None:
-            self.data_loader_params = {}
+            self.data_loader_params = {
+            'shuffle': True,    # The dataloader will shuffle its outputs at each epoch
+            'num_workers': 1,   # The number of workers that the dataloader will use to generate the batches
+            'drop_last': True,  # Drop the last batch if it is smaller than the batch size
+            }
         else:
             self.data_loader_params = deepcopy(data_loader_params)
-
-        if data is not None:
-            return self.generate(data, batch_size, data_loader_params, device)
-        else:
-            return None, None   # Return None if data is not provided
+            
 
     def generate(
             self, 
-            data:DataFrame=None, 
+            data=None, 
             batch_size:int=-1,
             data_loader_params:Optional[Dict] = None,
             device: torch.device = None
@@ -49,7 +50,7 @@ class DataLoaderGenerator:
         """
         Generate DataLoader objects for training and validation data.
         Args:
-            data (DataFrame): Data to be used for training and validation.
+            data: Data to be used for training and validation.
             batch_size (int): Batch size for DataLoader objects.
             data_loader_params (Dict): Additional parameters for DataLoader objects.
             device (torch.device): Device to be used for training.
@@ -66,8 +67,15 @@ class DataLoaderGenerator:
             self.device = device
 
         # Split data into training and validation data (ONLY RANDOM SPLIT IS IMPLEMENTED)
-        train_data = self.data.sample(frac=0.9, random_state=0)
-        val_data = self.data.drop(train_data.index)
+        if isinstance(self.data, DataFrame):
+            train_data = self.data.sample(frac=0.9, random_state=0)
+            val_data = self.data.drop(train_data.index)
+        else:
+            train_indx = np.random.choice(range(len(self.data)), int(0.9 * len(self.data)), replace=False)
+            val_indx = np.setdiff1d(range(len(self.data)), train_indx)
+            train_data = self.data[train_indx]
+            val_data = self.data[val_indx]
+
 
         # Convert data to PyTorch tensors
         train_dataset = TensorDataset(
@@ -85,3 +93,15 @@ class DataLoaderGenerator:
 
         return train_loader, val_loader
 
+
+if __name__ == "__main__":
+    import numpy as np
+    import pandas as pd
+
+    #data = pd.DataFrame(np.array([range(100)]).T)
+    # data = np.array(range(100))
+    data = np.random.rand(100, 2)
+    data_loader_generator = DataLoaderGenerator(data, batch_size=32)
+    train_loader, val_loader = data_loader_generator.generate()
+    print(train_loader)
+    print(val_loader)

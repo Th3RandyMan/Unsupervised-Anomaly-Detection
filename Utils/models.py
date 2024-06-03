@@ -8,6 +8,8 @@ import torch.optim as optim
 import matplotlib.pylab as plt
 import torch.distributions as tdist
 
+from Utils.processing import same_padding, force_padding
+
 
 # class BaseModel(nn.Module):
 #     def __init__(self, config):
@@ -15,61 +17,64 @@ import torch.distributions as tdist
 #         self.config = config
 
 # class VAEmodel(BaseModel):
-class VAEmodel(nn.Module):
-    def __init__(self, input_dims, latent_dims):
+class VAE(nn.Module):
+    def __init__(self, input_dims, latent_dims = 6):
     # def __init__(self, config):
         # super(VAEmodel, self).__init__(config)
-        super(VAEmodel, self).__init__()
+        super(VAE, self).__init__()
         #self.input_dims = self.config['l_win'] * self.config['n_channel']
         self.input_dims = input_dims
         self.latent_dims = latent_dims
         self.build_model()
 
-    def build_model(self, n_kernels:int = 512, n_channels:int = 1, latent_dims:int = 6, sigma:float = 0.1, sigma2_offset:float = 1e-2):
+    def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma:float = 0.1, sigma2_offset:float = 1e-2):
         # init = nn.init.xavier_uniform_
 
+        diff = (self.input_dims - self.latent_dims * 4)//4
         # Encoder Structure:
         self.encoder = nn.Sequential(
-            nn.Conv2d(n_channels, n_kernels // 16, kernel_size=3,
-                      stride=(2, 1), padding='same'),
+            nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, 
+                      padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
             nn.LeakyReLU(),
-            nn.Conv2d(n_kernels // 16, n_kernels // 8,
-                      kernel_size=3, stride=(2, 1), padding='same'),
+            nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, 
+                      padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.Conv2d(n_kernels // 8, n_kernels // 4,
-                      kernel_size=3, stride=(2, 1), padding='same'),
+            nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, 
+                      padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.Conv2d(n_kernels // 4, n_kernels,
-                      kernel_size=4, stride=1, padding='valid'),
+            nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,
+                      padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
+            nn.LeakyReLU(),
+            nn.Flatten(),    # Flatten the output to a 1D tensor
+            nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
             nn.LeakyReLU()
         )
 
         # Latent Space:
         # Could change the shape. Maybe add another linear layer before the mean and std_dev layers.
-        self.code_mean = nn.Linear(latent_dims * 4, latent_dims)
-        self.code_std_dev = nn.Linear(latent_dims * 4, latent_dims)
+        self.code_mean = nn.Linear(self.latent_dims * 4, self.latent_dims)
+        self.code_std_dev = nn.Linear(self.latent_dims * 4, self.latent_dims)
         self.code_std_dev.bias.data += sigma2_offset
 
         # Decoder Structure:
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dims, n_kernels),
+            nn.Linear(self.latent_dims, self.latent_dims * 4),
             nn.LeakyReLU(),
-            nn.Conv2d(n_kernels, n_kernels, kernel_size=1, padding='same'),
+            nn.Linear(self.latent_dims * 4, n_kernels * self.latent_dims * 4),
             nn.LeakyReLU(),
-            nn.Conv2d(n_kernels, n_kernels // 4,
-                      kernel_size=3, stride=1, padding='same'),
+            nn.Unflatten(1, (n_kernels, self.latent_dims * 4)),
+            nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,
+                               padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
             nn.LeakyReLU(),
-            nn.PixelShuffle(2),
-            nn.Conv2d(n_kernels // 4, n_kernels // 8,
-                      kernel_size=3, stride=1, padding='same'),
+            nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2,
+                               padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.PixelShuffle(2),
-            nn.Conv2d(n_kernels // 8, n_kernels // 16,
-                      kernel_size=3, stride=1, padding='same'),
+            nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2,
+                               padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
-            nn.PixelShuffle(2),
-            nn.Conv2d(n_kernels // 16, n_channels,
-                      kernel_size=9, stride=1, padding='valid')
+            nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2,
+                               padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
+            # nn.Sigmoid()
         )
 
         self.sigma2 = nn.Parameter(torch.tensor(sigma)**2 + sigma2_offset)
@@ -85,6 +90,8 @@ class VAEmodel(nn.Module):
         code_sample = mvn.sample()  # Sample from the distribution
         decoded = self.decoder(code_sample.unsqueeze(-1).unsqueeze(-1)) # Decode the sample
         return code_mean, code_std_dev, code_sample, decoded
+    
+
 
 
 
