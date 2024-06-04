@@ -251,79 +251,53 @@ class SumLoss(LossFunction):
             self.loss_tracker.epoch_losses[self.val_loss_name].append(val_loss_sum)
 
 
-class DynamicWeightLoss(LossFunction):
-    """
-    Loss whose weight changes linearly as training goes on. This is useful for implementing schedules/annealings
-    """
-
-    def __init__(
-        self,
-        loss_func: LossFunction,
-        start_weight: float,
-        end_weight: float,
-        epoch_count: int,
-        start_delay: int = 0,
-        name: Optional[str] = None,
-    ):
-        """
-        Loss whose weight changes linearly as training goes on. This is useful for implementing schedules/annealings.
-        If start delay is set to 0, the weight will start changing from the first epoch. Otherwise, it will hold the
-        start value for the first start_delay epochs before starting to change.
-
-        Args:
-            loss_func: The underlying loss function
-            start_weight: The weight at the start of the epochs
-            end_weight: The weight at the end of the epochs
-            epoch_count: The total number of epochs
-            start_delay: The number of epochs to wait before starting the weight change. During these epochs, the
-            start_weight will be used
-            name: The name of the loss function
-
-        Parameters:
-            current_epoch: The current epoch number. Current epoch starts at 0 and goes up to
-            (total_epochs + start_delay - 1). After that point, it stops changing until reset is called
-            total_epochs: The total number of epochs as defined by the user for loss weight scheduling. This does not
-            include the start_delay(explained below).
-            start_delay: The number of epochs to wait before starting the weight change
-            weights: The weights for each epoch
-            loss_tracker: The loss tracker object
-        """
-        super().__init__(name)
-        self.loss_func = loss_func
-        self.weights = torch.linspace(start_weight, end_weight, epoch_count)
-        self.weights = torch.cat([start_weight * torch.ones(start_delay), self.weights])
-        self.current_epoch = 0
-        self.total_epochs = epoch_count
-        self.start_delay = start_delay
-
-    def __call__(self, model_output, dataloader_data, trainer_mode):
-        loss = self.weights[self.current_epoch].item() * self.loss_func(model_output, dataloader_data, trainer_mode)
-        # Update internal loss tracker
-        self.loss_tracker_step_update(loss.item(), trainer_mode)
-        return loss
-
-    def loss_tracker_epoch_update(self) -> None:
-        if self.current_epoch < self.total_epochs + self.start_delay - 1:
-            self.current_epoch += 1
-        self.loss_tracker.epoch_update()
-
-    def __str__(self) -> str:
-        return f"Loss Function with changing weight: {self.loss_func},\n Start Weight: {self.weights[0].item()}, End Weight: {self.weights[-1].item()}, Total Epochs: {self.total_epochs}, Start Delay: {self.start_delay}"
-
-    def reset(self) -> None:
-        self.current_epoch = 0
-        self.loss_tracker = LossTracker([self.train_loss_name, self.val_loss_name])
-
-
 class KLDLoss(LossFunction):
     def __init__(self, name: str = "kld"):
         super().__init__(name)
     
     def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
-        _, mu, logvar = model_output
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        
+        mu, std_dev, code_sample, _ = model_output
+        # DOUBLE CHECK CODE_SAMPLE LENGTH IS RIGHT. MAYBE USE INDEXING
+        # CHECK IF mu.pow(2) is fastest
+        KLD = -0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+        
+        #_, mu, logvar = model_output
+        #KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         self.loss_tracker_step_update(KLD.item(), trainer_mode)
         return KLD
     
     def __str__(self):
         return f"KL Divergence Loss between the latent space and the normal distribution"
+
+
+class ELBOLoss(LossFunction):
+    def __init__(self, name: str = "elbo"):
+        super().__init__(name)
+
+    def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
+        mu, std_dev, code_sample, decoded = model_output
+        KLD = -0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+        two_pi = torch.tensor(decoded.shape[-1] * 3.14159265358979323846)
+        
+
+        elbo = two_pi + KLD 
+        return elbo
+    
+    def __str__(self):
+        return f"Evidence Lower Bound Loss"
+
+# class MSELoss(LossFunction):
+#     def __init__(self, feature_size: int, name: str = "mse"):
+#         super().__init__(name)
+#         self.feature_size = feature_size
+    
+#     def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
+#         recon_x, _, __ = model_output
+#         x = dataloader_data[0]  # Model Input
+#         loss = F.mse_loss(recon_x, x.view(-1, self.feature_size), reduction='sum')
+#         self.loss_tracker_step_update(loss.item(), trainer_mode)
+#         return loss
+    
+#     def __str__(self):
+#         return f"Binary Cross-Entropy Loss"

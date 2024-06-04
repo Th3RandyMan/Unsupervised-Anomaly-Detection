@@ -31,7 +31,7 @@ class VAE(nn.Module):
         if optimizer is not None:
             self.optimizer = optimizer
         else:
-            self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+            self.optimizer = optim.Adam(self.parameters(), lr=4e-4)
 
     def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma:float = 0.1, sigma2_offset:float = 1e-2):
         # init = nn.init.xavier_uniform_
@@ -127,7 +127,7 @@ class VAE(nn.Module):
         
         self.to(self.device)
         self.train()    # Could move this if recording validation loss
-        # train_loss = 0
+        train_loss = 0
         for epoch in range(n_epochs):
             for batch in train_loader:
                 batch.to(self.device)   # Move the batch to the device
@@ -137,25 +137,58 @@ class VAE(nn.Module):
                 loss.backward()         # Computer the gradients
                 optimizer.step()        # Update the weights
             if verbose:
-                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()}")
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(batch[0])}")
+
+    def save_model(self, path:str):
+        torch.save(self.state_dict(), path)
 
 
 
 
 
+class LSTM(nn.Module):
+    def __init__(self, latent_dims = 6, optimizer:optim.Optimizer = None):
+        super(LSTM, self).__init__()
+        self.latent_dims = latent_dims
 
-class lstmKerasModel:
-    def __init__(self, data):
-        pass
+        self.build_model(code_size=latent_dims)
 
-    def create_lstm_model(self, n_neurons: int = 64, code_size: int = 6):
-        lstm_model = nn.Sequential(
+        if optimizer is not None:
+            self.optimizer = optimizer
+        else:
+            self.optimizer = optim.Adam(self.parameters(), lr=2e-4)
+
+    def build_model(self, n_neurons: int = 64, code_size: int = 6):
+        self.model = nn.Sequential(
             nn.LSTM(code_size, n_neurons, batch_first=True, return_sequences=True),
             nn.LSTM(n_neurons, n_neurons, batch_first=True, return_sequences=True),
             nn.LSTM(n_neurons, code_size, batch_first=True, return_sequences=True),
             nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
         )
-        return lstm_model
+
+    def forward(self, x):
+        return self.model(x)
+    
+    def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
+        if optimizer is not None:
+            self.optimizer = optimizer
+        
+        self.to(self.device)
+        self.train()    # Could move this if recording validation loss
+        train_loss = 0
+        for epoch in range(n_epochs):
+            for batch in train_loader:
+                batch.to(self.device)   # Move the batch to the device
+                output = self(batch)    # Get the output from the model
+                loss = criterion(output, batch)   # Calculate the loss
+                optimizer.zero_grad()   # Zero the gradients
+                loss.backward()         # Computer the gradients
+                optimizer.step()        # Update the weights
+            if verbose:
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(batch[0])}")
+
+    def save_model(self, path:str):
+        torch.save(self.state_dict(), path)
 
     # def produce_embeddings(self, config, model_vae, data, sess):
     #     self.embedding_lstm_train = torch.zeros((data.n_train_lstm, config['l_seq'], config['code_size']))
