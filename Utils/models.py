@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pylab as plt
 import torch.distributions as tdist
+from torch.utils.data import DataLoader
 
 from Utils.processing import same_padding, force_padding
 
@@ -18,7 +19,7 @@ from Utils.processing import same_padding, force_padding
 
 # class VAEmodel(BaseModel):
 class VAE(nn.Module):
-    def __init__(self, input_dims, latent_dims = 6):
+    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None):
     # def __init__(self, config):
         # super(VAEmodel, self).__init__(config)
         super(VAE, self).__init__()
@@ -26,6 +27,11 @@ class VAE(nn.Module):
         self.input_dims = input_dims
         self.latent_dims = latent_dims
         self.build_model()
+
+        if optimizer is not None:
+            self.optimizer = optimizer
+        else:
+            self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
 
     def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma:float = 0.1, sigma2_offset:float = 1e-2):
         # init = nn.init.xavier_uniform_
@@ -41,12 +47,15 @@ class VAE(nn.Module):
             nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, # Shape (1, 100)
                       padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 16),
             nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, # Shape (32, 80)
                       padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 8),
             nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, # Shape (64, 60)
                       padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 4),
             nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,   # Shape (128, 40)
                       padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
             nn.LeakyReLU(), # Shape (512, 24)
@@ -71,12 +80,15 @@ class VAE(nn.Module):
             nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,  # Shape (128, 40)
                                padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 4),
             nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2, output_padding=1, # Shape (32, 60)  # output_padding=1 to fix the output size
                                padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 8),
             nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2, output_padding=1,   # Shape (8, 80)
                                padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
             nn.LeakyReLU(),
+            #nn.BatchNorm1d(n_kernels // 16),
             nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2, output_padding=1,   # Shape (1, 100)
                                padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
             # nn.Sigmoid()
@@ -98,7 +110,36 @@ class VAE(nn.Module):
         decoded = self.decoder(code_sample) # Decode the sample
         return code_mean, code_std_dev, code_sample, decoded
     
-    # Add training and loss methods
+    # def train_model(self, data, config, optimizer, criterion, cp_callback):
+    #     for epoch in range(config['num_epochs_vae']):
+    #         for x in data.train_loader:
+    #             optimizer.zero_grad()
+    #             output = self(x)
+    #             loss = criterion(output[3], x)
+    #             loss.backward()
+    #             optimizer.step()
+    #         print(f"Epoch {epoch+1}/{config['num_epochs_vae']}, Loss: {loss.item()}")
+    #     torch.save(self.state_dict(), cp_callback)
+
+    def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
+        if optimizer is not None:
+            self.optimizer = optimizer
+        
+        self.to(self.device)
+        self.train()    # Could move this if recording validation loss
+        # train_loss = 0
+        for epoch in range(n_epochs):
+            for batch in train_loader:
+                batch.to(self.device)   # Move the batch to the device
+                output = self(batch)    # Get the output from the model
+                loss = criterion(output[3], batch)   # Calculate the loss
+                optimizer.zero_grad()   # Zero the gradients
+                loss.backward()         # Computer the gradients
+                optimizer.step()        # Update the weights
+            if verbose:
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()}")
+
+
 
 
 
