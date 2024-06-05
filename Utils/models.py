@@ -9,6 +9,7 @@ import matplotlib.pylab as plt
 import torch.distributions as tdist
 from torch.utils.data import DataLoader
 
+from Utils.lossfunctions import ELBOLoss, MSELoss
 from Utils.processing import same_padding, force_padding
 
 
@@ -19,7 +20,7 @@ from Utils.processing import same_padding, force_padding
 
 # class VAEmodel(BaseModel):
 class VAE(nn.Module):
-    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None):
+    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None):
     # def __init__(self, config):
         # super(VAEmodel, self).__init__(config)
         super(VAE, self).__init__()
@@ -31,9 +32,19 @@ class VAE(nn.Module):
         if optimizer is not None:
             self.optimizer = optimizer
         else:
-            self.optimizer = optim.Adam(self.parameters(), lr=4e-4)
+            self.optimizer = optim.Adam(self.parameters(), lr=4e-4, betas=(0.9, 0.95))
 
-    def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma:float = 0.1, sigma2_offset:float = 1e-2):
+        if criterion is None:
+            self.criterion = ELBOLoss()
+        else:
+            self.criterion = criterion
+
+        if device is not None:
+            self.device = device
+        else:
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma2_offset:float = 1e-2):
         # init = nn.init.xavier_uniform_
 
         diff = (self.input_dims - self.latent_dims * 4)//4
@@ -95,8 +106,6 @@ class VAE(nn.Module):
             # Shape (1, 100)
         )
 
-        self.sigma2 = nn.Parameter(torch.tensor(sigma)**2 + sigma2_offset)
-
     def forward(self, x):
         encoded_signal = self.encoder(x)    # Encode the input signal into the latent space
         encoded_signal = encoded_signal.view(encoded_signal.size(0), -1)
@@ -124,20 +133,25 @@ class VAE(nn.Module):
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
         if optimizer is not None:
             self.optimizer = optimizer
+        if criterion is not None:
+            self.criterion = criterion
+        if device is not None:
+            self.device = device
         
         self.to(self.device)
         self.train()    # Could move this if recording validation loss
         train_loss = 0
         for epoch in range(n_epochs):
-            for batch in train_loader:
-                batch.to(self.device)   # Move the batch to the device
-                output = self(batch)    # Get the output from the model
-                loss = criterion(output[3], batch)   # Calculate the loss
+            for data, _ in train_loader:
+                #batch.to(self.device)   # Move the batch to the device
+                data = data.to(self.device)
+                output = self(data)    # Get the output from the model
+                loss = criterion(output[3], data)   # Calculate the loss
                 optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
                 optimizer.step()        # Update the weights
             if verbose:
-                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(batch[0])}")
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
     def save_model(self, path:str):
         torch.save(self.state_dict(), path)
@@ -147,7 +161,7 @@ class VAE(nn.Module):
 
 
 class LSTM(nn.Module):
-    def __init__(self, latent_dims = 6, optimizer:optim.Optimizer = None):
+    def __init__(self, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None):
         super(LSTM, self).__init__()
         self.latent_dims = latent_dims
 
@@ -157,6 +171,16 @@ class LSTM(nn.Module):
             self.optimizer = optimizer
         else:
             self.optimizer = optim.Adam(self.parameters(), lr=2e-4)
+
+        if criterion is None:
+            self.criterion = MSELoss()
+        else:
+            self.criterion = criterion
+
+        if device is not None:
+            self.device = device
+        else:
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def build_model(self, n_neurons: int = 64, code_size: int = 6):
         self.model = nn.Sequential(
@@ -172,6 +196,10 @@ class LSTM(nn.Module):
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
         if optimizer is not None:
             self.optimizer = optimizer
+        if criterion is not None:
+            self.criterion = criterion
+        if device is not None:
+            self.device = device
         
         self.to(self.device)
         self.train()    # Could move this if recording validation loss
@@ -180,7 +208,7 @@ class LSTM(nn.Module):
             for batch in train_loader:
                 batch.to(self.device)   # Move the batch to the device
                 output = self(batch)    # Get the output from the model
-                loss = criterion(output, batch)   # Calculate the loss
+                loss = criterion(output, batch, 'train')   # Calculate the loss
                 optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
                 optimizer.step()        # Update the weights

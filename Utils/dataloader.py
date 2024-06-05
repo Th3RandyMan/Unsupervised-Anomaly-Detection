@@ -33,7 +33,7 @@ class DataLoaderGenerator:
         if self.data_loader_params is None:
             self.data_loader_params = {
             'shuffle': True,    # The dataloader will shuffle its outputs at each epoch
-            'num_workers': 1,   # The number of workers that the dataloader will use to generate the batches
+            'num_workers': 0,   # The number of workers that the dataloader will use to generate the batches
             'drop_last': True,  # Drop the last batch if it is smaller than the batch size
             }
         else:
