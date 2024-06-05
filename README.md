@@ -3,6 +3,7 @@ Project for detecting anomalies without ground truth.
 
 ### To do:
 * Elbo Loss function (implemented, but check eval)
+* Normalize input
 * Figure out training with different time series
     * Sequence?
     * Reset memory/state ?

@@ -274,11 +274,12 @@ class KLDLoss(LossFunction):
 class ELBOLoss(LossFunction):
     def __init__(self, name: str = "elbo", sigma: float = 0.1, sigma2_offset: float = 1e-2):
         super().__init__(name)
-        self.sigma2 = sigma ** 2 + sigma2_offset
+        self.sigma2 = torch.tensor(sigma ** 2 + sigma2_offset)
 
     def __call__(self, model_output, model_input, trainer_mode: str) -> torch.Tensor:
         mu, std_dev, code_sample, decoded = model_output
-        KLD = -0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+        # KLD = -0.5 * torch.sum(code_sample.shape[-1] + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+        KLD = -0.5 * (torch.tensor(code_sample.shape[-1]) + torch.sum(2*torch.log(std_dev) - mu.pow(2) - std_dev.pow(2)))
         two_pi = torch.tensor(model_input.shape[-1] * 3.14159265358979323846)
         #NOT DONE
         sigma_reg = torch.tensor(model_input.shape[-1] / 2) * torch.log(self.sigma2)

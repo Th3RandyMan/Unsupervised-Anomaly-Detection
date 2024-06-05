@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 
 from Utils.lossfunctions import ELBOLoss, MSELoss
 from Utils.processing import same_padding, force_padding
+import os
 
 
 # class BaseModel(nn.Module):
@@ -79,7 +80,7 @@ class VAE(nn.Module):
         # Could change the shape. Maybe add another linear layer before the mean and std_dev layers.
         self.code_mean = nn.Linear(self.latent_dims * 4, self.latent_dims)
         self.code_std_dev = nn.Linear(self.latent_dims * 4, self.latent_dims)
-        self.code_std_dev.bias.data += sigma2_offset
+        #self.code_std_dev.bias.data += sigma2_offset
 
         # Decoder Structure:
         self.decoder = nn.Sequential(
@@ -146,15 +147,34 @@ class VAE(nn.Module):
                 #batch.to(self.device)   # Move the batch to the device
                 data = data.to(self.device)
                 output = self(data)    # Get the output from the model
-                loss = criterion(output[3], data)   # Calculate the loss
-                optimizer.zero_grad()   # Zero the gradients
+                loss = self.criterion(output, data, "train")   # Calculate the loss
+                self.optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
-                optimizer.step()        # Update the weights
+                self.optimizer.step()        # Update the weights
             if verbose:
                 print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
+    def encode_data(self, dataloader:DataLoader, device:torch.device=None):
+        if device is not None:
+            self.device = device
+        self.to(self.device)
+        self.eval()
+        embeddings = []
+        with torch.no_grad():
+            for data, _ in dataloader:
+                data = data.to(self.device)
+                output = self(data)
+                embeddings.append(output[2].cpu().numpy())
+        return np.concatenate(embeddings, axis=0)
+
     def save_model(self, path:str):
+        folder = os.path.dirname(path)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         torch.save(self.state_dict(), path)
+
+    def load_model(self, path:str):
+        self.load_state_dict(torch.load(path))
 
 
 
@@ -184,9 +204,9 @@ class LSTM(nn.Module):
 
     def build_model(self, n_neurons: int = 64, code_size: int = 6):
         self.model = nn.Sequential(
-            nn.LSTM(code_size, n_neurons, batch_first=True, return_sequences=True),
-            nn.LSTM(n_neurons, n_neurons, batch_first=True, return_sequences=True),
-            nn.LSTM(n_neurons, code_size, batch_first=True, return_sequences=True),
+            nn.LSTM(code_size, n_neurons, batch_first=True),
+            nn.LSTM(n_neurons, n_neurons, batch_first=True),
+            nn.LSTM(n_neurons, code_size, batch_first=True),
             nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
         )
 

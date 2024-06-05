@@ -76,6 +76,12 @@ class DataLoaderGenerator:
             train_data = self.data[train_indx]
             val_data = self.data[val_indx]
 
+        train_data = train_data.astype(np.float32)
+        val_data = val_data.astype(np.float32)
+
+        if len(train_data.shape) == 2:
+            train_data = train_data[:,np.newaxis,:] # Add channel dimension
+            val_data = val_data[:,np.newaxis,:] # Add channel dimension
 
         # Convert data to PyTorch tensors
         train_dataset = TensorDataset(
