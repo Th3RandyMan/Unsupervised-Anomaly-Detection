@@ -203,15 +203,48 @@ class LSTM(nn.Module):
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def build_model(self, n_neurons: int = 64, code_size: int = 6):
-        self.model = nn.Sequential(
+        # self.model = nn.Sequential(
+        #     nn.LSTM(code_size, n_neurons, batch_first=True),
+        #     nn.LSTM(n_neurons, n_neurons, batch_first=True),
+        #     nn.LSTM(n_neurons, code_size, batch_first=True),
+        #     nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
+        # )
+        self.models = nn.ModuleList([
             nn.LSTM(code_size, n_neurons, batch_first=True),
             nn.LSTM(n_neurons, n_neurons, batch_first=True),
             nn.LSTM(n_neurons, code_size, batch_first=True),
             nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
-        )
+        ])
+
+        # for model in self.models:
+        #     for name, param in model.named_parameters():
+        #         if 'weight' in name:
+        #             nn.init.xavier_normal_(param)
+        #         else:
+        #             nn.init.zeros_(param)
+        self.lstm_hidden = []
+        for model in self.models:
+            if isinstance(model, nn.LSTM):
+                self.lstm_hidden.append(model.hidden_size)
 
     def forward(self, x):
-        return self.model(x)
+        # Initialize hidden state with zeros
+        if len(x.shape) > 2:    # If the input is a batch
+            h = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+            c = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+        else:   # If the input is a single sample
+            h = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+            c = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+
+        h = [torch.nn.init.xavier_normal_(h_) for h_ in h]
+        c = [torch.nn.init.xavier_normal_(c_) for c_ in c]
+
+        for model, h_, c_ in zip(self.models, h, c):
+            if isinstance(model, nn.LSTM):
+                x, (h_,c_) = model(x,(h_,c_))    # Get the output and hidden states
+            else:
+                x = model(x)
+        return x
     
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
         if optimizer is not None:
@@ -225,106 +258,21 @@ class LSTM(nn.Module):
         self.train()    # Could move this if recording validation loss
         train_loss = 0
         for epoch in range(n_epochs):
-            for batch in train_loader:
-                batch.to(self.device)   # Move the batch to the device
-                output = self(batch)    # Get the output from the model
-                loss = criterion(output, batch, 'train')   # Calculate the loss
-                optimizer.zero_grad()   # Zero the gradients
+            for data, _ in train_loader:
+                data = data.to(self.device)   # Move the batch to the device
+                output = self(data)    # Get the output from the model
+                loss = self.criterion(output, data, 'train')   # Calculate the loss
+                self.optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
-                optimizer.step()        # Update the weights
+                self.optimizer.step()        # Update the weights
             if verbose:
-                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(batch[0])}")
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
     def save_model(self, path:str):
+        folder = os.path.dirname(path)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         torch.save(self.state_dict(), path)
 
-    # def produce_embeddings(self, config, model_vae, data, sess):
-    #     self.embedding_lstm_train = torch.zeros((data.n_train_lstm, config['l_seq'], config['code_size']))
-    #     for i in range(data.n_train_lstm):
-    #         self.embedding_lstm_train[i] = model_vae(data.train_set_lstm['data'][i])[2].detach().numpy()
-    #     print("Finish processing the embeddings of the entire dataset.")
-    #     print("The first a few embeddings are\n{}".format(self.embedding_lstm_train[0, 0:5]))
-    #     self.x_train = self.embedding_lstm_train[:, :config['l_seq'] - 1]
-    #     self.y_train = self.embedding_lstm_train[:, 1:]
-
-    #     self.embedding_lstm_test = torch.zeros((data.n_val_lstm, config['l_seq'], config['code_size']))
-    #     for i in range(data.n_val_lstm):
-    #         self.embedding_lstm_test[i] = model_vae(data.val_set_lstm['data'][i])[2].detach().numpy()
-    #     self.x_test = self.embedding_lstm_test[:, :config['l_seq'] - 1]
-    #     self.y_test = self.embedding_lstm_test[:, 1:]
-
-    # def load_model(self, lstm_model, config, checkpoint_path):
-    #     if checkpoint_path.exists():
-    #         lstm_model.load_state_dict(torch.load(checkpoint_path))
-    #         print("LSTM model loaded.")
-    #     else:
-    #         print("No LSTM model loaded.")
-
-    # def train(self, config, lstm_model, cp_callback):
-    #     optimizer = optim.Adam(lstm_model.parameters(), lr=config['learning_rate_lstm'])
-    #     criterion = nn.MSELoss()
-    #     for epoch in range(config['num_epochs_lstm']):
-    #         for x, y in zip(self.x_train, self.y_train):
-    #             optimizer.zero_grad()
-    #             output = lstm_model(x.unsqueeze(0))
-    #             loss = criterion(output, y.unsqueeze(0))
-    #             loss.backward()
-    #             optimizer.step()
-    #         print(f"Epoch {epoch+1}/{config['num_epochs_lstm']}, Loss: {loss.item()}")
-    #     torch.save(lstm_model.state_dict(), cp_callback)
-
-    # def plot_reconstructed_lt_seq(self, idx_test, config, model_vae, sess, data, lstm_embedding_test):
-    #     decoded_seq_vae = model_vae(data.val_set_lstm['data'][idx_test])[3].detach().numpy().squeeze()
-    #     print("Decoded seq from VAE: {}".format(decoded_seq_vae.shape))
-
-    #     decoded_seq_lstm = lstm_model(self.embedding_lstm_test[idx_test].unsqueeze(0)).detach().numpy().squeeze()
-    #     print("Decoded seq from lstm: {}".format(decoded_seq_lstm.shape))
-
-    #     fig, axs = plt.subplots(config['n_channel'], 2, figsize=(15, 4.5 * config['n_channel']), edgecolor='k')
-    #     fig.subplots_adjust(hspace=.4, wspace=.4)
-    #     axs = axs.ravel()
-    #     for j in range(config['n_channel']):
-    #         for i in range(2):
-    #             axs[i + j * 2].plot(np.arange(0, config['l_seq'] * config['l_win']),
-    #                                 np.reshape(data.val_set_lstm['data'][idx_test, :, :, j],
-    #                                            (config['l_seq'] * config['l_win'])))
-    #             axs[i + j * 2].grid(True)
-    #             axs[i + j * 2].set_xlim(0, config['l_seq'] * config['l_win'])
-    #             axs[i + j * 2].set_xlabel('samples')
-    #         if config['n_channel'] == 1:
-    #             axs[0 + j * 2].plot(np.arange(0, config['l_seq'] * config['l_win']),
-    #                                 np.reshape(decoded_seq_vae, (config['l_seq'] * config['l_win'])), 'r--')
-    #             axs[1 + j * 2].plot(np.arange(config['l_win'], config['l_seq'] * config['l_win']),
-    #                                 np.reshape(decoded_seq_lstm, ((config['l_seq'] - 1) * config['l_win'])), 'g--')
-    #         else:
-    #             axs[0 + j * 2].plot(np.arange(0, config['l_seq'] * config['l_win']),
-    #                                 np.reshape(decoded_seq_vae[:, :, j], (config['l_seq'] * config['l_win'])), 'r--')
-    #             axs[1 + j * 2].plot(np.arange(config['l_win'], config['l_seq'] * config['l_win']),
-    #                                 np.reshape(decoded_seq_lstm[:, :, j], ((config['l_seq'] - 1) * config['l_win'])), 'g--')
-    #         axs[0 + j * 2].set_title('VAE reconstruction - channel {}'.format(j))
-    #         axs[1 + j * 2].set_title('LSTM reconstruction - channel {}'.format(j))
-    #         for i in range(2):
-    #             axs[i + j * 2].legend(('ground truth', 'reconstruction'))
-    #         savefig(config['result_dir'] + "lstm_long_seq_recons_{}.pdf".format(idx_test))
-    #         fig.clf()
-    #         plt.close()
-
-    # def plot_lstm_embedding_prediction(self, idx_test, config, model_vae, sess, data, lstm_embedding_test):
-    #     self.plot_reconstructed_lt_seq(idx_test, config, model_vae, sess, data, lstm_embedding_test)
-
-    #     fig, axs = plt.subplots(2, config['code_size'] // 2, figsize=(15, 5.5), edgecolor='k')
-    #     fig.subplots_adjust(hspace=.4, wspace=.4)
-    #     axs = axs.ravel()
-    #     for i in range(config['code_size']):
-    #         axs[i].plot(np.arange(1, config['l_seq']), np.squeeze(self.embedding_lstm_test[idx_test, 1:, i]))
-    #         axs[i].plot(np.arange(1, config['l_seq']), np.squeeze(lstm_embedding_test[idx_test, :, i]))
-    #         axs[i].set_xlim(1, config['l_seq'] - 1)
-    #         axs[i].set_ylim(-2.5, 2.5)
-    #         axs[i].grid(True)
-    #         axs[i].set_title('Embedding dim {}'.format(i))
-    #         axs[i].set_xlabel('windows')
-    #         if i == config['code_size'] - 1:
-    #             axs[i].legend(('VAE\nembedding', 'LSTM\nembedding'))
-    #     savefig(config['result_dir'] + "lstm_seq_embedding_{}.pdf".format(idx_test))
-    #     fig.clf()
-    #     plt.close()
+    def load_model(self, path:str):
+        self.load_state_dict(torch.load(path))
