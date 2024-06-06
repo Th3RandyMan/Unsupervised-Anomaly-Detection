@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 from matplotlib import pyplot as plt
 import torch
+import torch.nn.functional as F
 
 
 DATA_LOADER_INPUT_INDEX, DATA_LOADER_LABEL_INDEX, DATA_LOADER_EXTRA_INDEX = 0, 1, 2
@@ -293,14 +294,19 @@ class ELBOLoss(LossFunction):
         return f"Evidence Lower Bound Loss"
 
 class MSELoss(LossFunction):
-    def __init__(self, feature_size: int, name: str = "mse"):
+    #def __init__(self, feature_size: int, name: str = "mse"):
+    def __init__(self, name: str = "mse"):
         super().__init__(name)
-        self.feature_size = feature_size
+        #self.feature_size = feature_size
     
     def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
-        recon_x, _, __ = model_output
-        x = dataloader_data[0]  # Model Input
-        loss = F.mse_loss(recon_x, x.view(-1, self.feature_size), reduction='sum')
+        if isinstance(model_output, tuple):
+            recon_x, _, __ = model_output
+        else:
+            recon_x = model_output
+        x = dataloader_data  # Model Input
+        # loss = F.mse_loss(recon_x, x.view(-1, self.feature_size), reduction='sum')
+        loss = F.mse_loss(recon_x, x, reduction='sum')
         self.loss_tracker_step_update(loss.item(), trainer_mode)
         return loss
     
