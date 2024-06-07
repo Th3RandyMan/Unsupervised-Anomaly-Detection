@@ -21,13 +21,14 @@ import os
 
 # class VAEmodel(BaseModel):
 class VAE(nn.Module):
-    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None):
+    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None, normalized:bool = True):
     # def __init__(self, config):
         # super(VAEmodel, self).__init__(config)
         super(VAE, self).__init__()
         #self.input_dims = self.config['l_win'] * self.config['n_channel']
         self.input_dims = input_dims
         self.latent_dims = latent_dims
+        self.normalized = normalized
         self.build_model()
 
         if optimizer is not None:
@@ -54,27 +55,93 @@ class VAE(nn.Module):
         if diff % 2 != 0:   # Maybe remove this
             diff += 1
         
-        # Encoder Structure:
-        self.encoder = nn.Sequential(
-            nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, # Shape (1, 100)
-                      padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 16),
-            nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, # Shape (32, 80)
-                      padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 8),
-            nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, # Shape (64, 60)
-                      padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 4),
-            nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,   # Shape (128, 40)
-                      padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
-            nn.LeakyReLU(), # Shape (512, 24)
-            nn.Flatten(),    # Flatten the output to a 1D tensor
-            nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
-            nn.LeakyReLU()
-        )
+        if self.normalized:
+            # Encoder Structure:
+            self.encoder = nn.Sequential(
+                nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, # Shape (1, 100)
+                        padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 16),
+                nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, # Shape (32, 80)
+                        padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 8),
+                nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, # Shape (64, 60)
+                        padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 4),
+                nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,   # Shape (128, 40)
+                        padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
+                nn.LeakyReLU(), # Shape (512, 24)
+                nn.Flatten(),    # Flatten the output to a 1D tensor
+                nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
+                nn.LeakyReLU()
+            )
+
+            # Decoder Structure:
+            self.decoder = nn.Sequential(
+                nn.Linear(self.latent_dims, self.latent_dims * 4),
+                nn.LeakyReLU(),
+                nn.Linear(self.latent_dims * 4, n_kernels * self.latent_dims * 4),
+                nn.LeakyReLU(),
+                nn.Unflatten(1, (n_kernels, self.latent_dims * 4)), # Shape (512, 24)
+                nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,  # Shape (128, 40)
+                                padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 4),
+                nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2, output_padding=1, # Shape (32, 60)  # output_padding=1 to fix the output size
+                                padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 8),
+                nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2, output_padding=1,   # Shape (8, 80)
+                                padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.BatchNorm1d(n_kernels // 16),
+                nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2, output_padding=1,   # Shape (1, 100)
+                                padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
+                # nn.Sigmoid()
+                # Shape (1, 100)
+            )
+        else:
+            self.encoder = nn.Sequential(
+                nn.Conv1d(n_channels, n_kernels // 16, kernel_size=3, stride=2, # Shape (1, 100)
+                        padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),   # Removed same_padding(self.input_dims, 3, 2)
+                nn.LeakyReLU(),
+                nn.Conv1d(n_kernels // 16, n_kernels // 8, kernel_size=3, stride=2, # Shape (32, 80)
+                        padding=force_padding(self.input_dims - diff, self.input_dims - diff*2,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.Conv1d(n_kernels // 8, n_kernels // 4, kernel_size=3, stride=2, # Shape (64, 60)
+                        padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.Conv1d(n_kernels // 4, n_kernels, kernel_size=4, stride=2,   # Shape (128, 40)
+                        padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4, kernel_size=4, stride=2)),
+                nn.LeakyReLU(), # Shape (512, 24)
+                nn.Flatten(),    # Flatten the output to a 1D tensor
+                nn.Linear(n_kernels * self.latent_dims * 4, self.latent_dims * 4),
+                nn.LeakyReLU()
+            )
+
+            # Decoder Structure:
+            self.decoder = nn.Sequential(
+                nn.Linear(self.latent_dims, self.latent_dims * 4),
+                nn.LeakyReLU(),
+                nn.Linear(self.latent_dims * 4, n_kernels * self.latent_dims * 4),
+                nn.LeakyReLU(),
+                nn.Unflatten(1, (n_kernels, self.latent_dims * 4)), # Shape (512, 24)
+                nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,  # Shape (128, 40)
+                                padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
+                nn.LeakyReLU(),
+                nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2, output_padding=1, # Shape (32, 60)  # output_padding=1 to fix the output size
+                                padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2, output_padding=1,   # Shape (8, 80)
+                                padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
+                nn.LeakyReLU(),
+                nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2, output_padding=1,   # Shape (1, 100)
+                                padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
+                # nn.Sigmoid()
+                # Shape (1, 100)
+            )
 
         # Latent Space:
         # Could change the shape. Maybe add another linear layer before the mean and std_dev layers.
@@ -82,30 +149,6 @@ class VAE(nn.Module):
         self.code_std_dev = nn.Linear(self.latent_dims * 4, self.latent_dims)
         #self.code_std_dev.bias.data += sigma2_offset
 
-        # Decoder Structure:
-        self.decoder = nn.Sequential(
-            nn.Linear(self.latent_dims, self.latent_dims * 4),
-            nn.LeakyReLU(),
-            nn.Linear(self.latent_dims * 4, n_kernels * self.latent_dims * 4),
-            nn.LeakyReLU(),
-            nn.Unflatten(1, (n_kernels, self.latent_dims * 4)), # Shape (512, 24)
-            nn.ConvTranspose1d(n_kernels, n_kernels // 4, kernel_size=4, stride=2,  # Shape (128, 40)
-                               padding=force_padding(self.input_dims - diff*3, self.latent_dims * 4,kernel_size=4,stride=2)),
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 4),
-            nn.ConvTranspose1d(n_kernels // 4, n_kernels // 8, kernel_size=3, stride=2, output_padding=1, # Shape (32, 60)  # output_padding=1 to fix the output size
-                               padding=force_padding(self.input_dims - diff*2, self.input_dims - diff*3,kernel_size=3,stride=2)),
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 8),
-            nn.ConvTranspose1d(n_kernels // 8, n_kernels // 16, kernel_size=3, stride=2, output_padding=1,   # Shape (8, 80)
-                               padding=force_padding(self.input_dims - diff*1, self.input_dims - diff*2,kernel_size=3,stride=2)),
-            nn.LeakyReLU(),
-            #nn.BatchNorm1d(n_kernels // 16),
-            nn.ConvTranspose1d(n_kernels // 16, n_channels, kernel_size=3, stride=2, output_padding=1,   # Shape (1, 100)
-                               padding=force_padding(self.input_dims, self.input_dims - diff,kernel_size=3,stride=2)),
-            # nn.Sigmoid()
-            # Shape (1, 100)
-        )
 
     def forward(self, x):
         encoded_signal = self.encoder(x)    # Encode the input signal into the latent space
@@ -151,6 +194,7 @@ class VAE(nn.Module):
                 self.optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
                 self.optimizer.step()        # Update the weights
+            self.criterion.loss_tracker_epoch_update()
             if verbose:
                 print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
@@ -175,6 +219,16 @@ class VAE(nn.Module):
 
     def load_model(self, path:str):
         self.load_state_dict(torch.load(path))
+
+    def plot_loss(self, path:str=None):
+        plt.figure()
+        self.criterion.loss_tracker.plot_losses()
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        if path is not None:
+            savefig(path)
+        else:
+            plt.show()
 
 
 
@@ -265,6 +319,7 @@ class LSTM(nn.Module):
                 self.optimizer.zero_grad()   # Zero the gradients
                 loss.backward()         # Computer the gradients
                 self.optimizer.step()        # Update the weights
+            self.criterion.loss_tracker_epoch_update()
             if verbose:
                 print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
@@ -276,3 +331,13 @@ class LSTM(nn.Module):
 
     def load_model(self, path:str):
         self.load_state_dict(torch.load(path))
+
+    def plot_loss(self, path:str=None):
+        plt.figure()
+        self.criterion.loss_tracker.plot_losses()
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        if path is not None:
+            savefig(path)
+        else:
+            plt.show()
