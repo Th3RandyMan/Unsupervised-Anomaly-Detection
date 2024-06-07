@@ -8,7 +8,7 @@ import torch.optim as optim
 import matplotlib.pylab as plt
 import torch.distributions as tdist
 from torch.utils.data import DataLoader
-
+from Utils.dataloader import DataLoaderGenerator
 from Utils.lossfunctions import ELBOLoss, MSELoss
 from Utils.processing import same_padding, force_padding
 import os
@@ -21,15 +21,36 @@ import os
 
 # class VAEmodel(BaseModel):
 class VAE(nn.Module):
-    def __init__(self, input_dims, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None, normalized:bool = True):
-    # def __init__(self, config):
-        # super(VAEmodel, self).__init__(config)
+    def __init__(self, input_dims:int, latent_dims:int = 6, n_channels:int = 1, n_kernels:int = 512, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None, normalized:bool = True):
+        """
+        Constructor for the VAE model.
+        Args:
+            input_dims (int): Number of input dimensions.
+            latent_dims (int): Number of latent dimensions.
+                Default is 6.
+            n_channels (int): Number of channels in the input data.
+                Default is 1.
+            n_kernels (int): Number of kernels in the model. This scales as the encoder and decoder progress.
+                Default is 512.
+            optimizer (torch.optim.Optimizer): Optimizer for the model.
+                Default is Adam with learning rate 4e-4 and betas (0.9, 0.95).
+            criterion (nn.Module): Loss function for the model.
+                Default is ELBOLoss.
+            device (torch.device): Device to be used for training.
+                Default is 'cuda' if available, else 'cpu'.
+            normalized (bool): Whether the input data is normalized
+                Default is True.
+        """
         super(VAE, self).__init__()
-        #self.input_dims = self.config['l_win'] * self.config['n_channel']
+        if input_dims is None:
+            raise ValueError("Input dimensions must be specified")
+        if latent_dims is None:
+            raise ValueError("Latent dimensions must be specified")
+        
         self.input_dims = input_dims
         self.latent_dims = latent_dims
         self.normalized = normalized
-        self.build_model()
+        self.build_model(n_channels=n_channels, n_kernels=n_kernels)
 
         if optimizer is not None:
             self.optimizer = optimizer
@@ -46,9 +67,16 @@ class VAE(nn.Module):
         else:
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    def build_model(self, n_kernels:int = 512, n_channels:int = 1, sigma2_offset:float = 1e-2):
-        # init = nn.init.xavier_uniform_
-
+    def build_model(self, n_kernels:int = 512, n_channels:int = 1):
+        """
+        Function to build the VAE model. This function builds the encoder, decoder, and latent space. 
+        The encoder and decoder are convolutional neural networks. The latent space is a multivariate normal distribution. 
+        Args:
+            n_kernels (int): Number of kernels in the model. This scales as the encoder and decoder progress.
+                Default is 512.
+            n_channels (int): Number of channels in the input data.
+                Default is 1.
+        """
         diff = (self.input_dims - self.latent_dims * 4)//4
         if diff < 0:
             raise ValueError("The latent space is too large for the input size.")
@@ -162,19 +190,23 @@ class VAE(nn.Module):
         #decoded = self.decoder(code_sample.unsqueeze(-1).unsqueeze(-1)) # Decode the sample
         decoded = self.decoder(code_sample) # Decode the sample
         return code_mean, code_std_dev, code_sample, decoded
-    
-    # def train_model(self, data, config, optimizer, criterion, cp_callback):
-    #     for epoch in range(config['num_epochs_vae']):
-    #         for x in data.train_loader:
-    #             optimizer.zero_grad()
-    #             output = self(x)
-    #             loss = criterion(output[3], x)
-    #             loss.backward()
-    #             optimizer.step()
-    #         print(f"Epoch {epoch+1}/{config['num_epochs_vae']}, Loss: {loss.item()}")
-    #     torch.save(self.state_dict(), cp_callback)
 
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
+        """
+        Function to train the VAE model.
+        Args:
+            train_loader (DataLoader): DataLoader object for the training data.
+            n_epochs (int): Number of epochs to train the model.
+                Default is 1.
+            optimizer (torch.optim.Optimizer): Optimizer for the model.
+                Default is None.
+            criterion (nn.Module): Loss function for the model.
+                Default is None.
+            device (torch.device): Device to be used for training.
+                Default is None.
+            verbose (bool): Whether to print the loss at each epoch.
+                Default is True.
+        """
         if optimizer is not None:
             self.optimizer = optimizer
         if criterion is not None:
@@ -199,6 +231,14 @@ class VAE(nn.Module):
                 print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
     def encode_data(self, dataloader:DataLoader, device:torch.device=None):
+        """
+        Function to encode data using the VAE model. 
+        Takes a DataLoader object and returns the encoded data in the latent space.
+        Args:
+            dataloader (DataLoader): DataLoader object for the data.
+            device (torch.device): Device to be used for training.
+                Default is None.
+        """
         if device is not None:
             self.device = device
         self.to(self.device)
@@ -212,6 +252,9 @@ class VAE(nn.Module):
         return np.concatenate(embeddings, axis=0)
 
     def save_model(self, path:str):
+        """
+        Function to save the model. Creates folders if they do not exist.
+        """
         folder = os.path.dirname(path)
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -221,12 +264,18 @@ class VAE(nn.Module):
         self.load_state_dict(torch.load(path))
 
     def plot_loss(self, path:str=None):
+        """
+        Function to plot the loss of the model. If path is specified, the plot is saved to the path.
+        """
         plt.figure()
         self.criterion.loss_tracker.plot_losses()
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
         if path is not None:
-            savefig(path)
+            folder = os.path.dirname(path)
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+            plt.savefig(path)
         else:
             plt.show()
 
@@ -235,11 +284,25 @@ class VAE(nn.Module):
 
 
 class LSTM(nn.Module):
-    def __init__(self, latent_dims = 6, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None):
+    def __init__(self, latent_dims = 6, n_neurons: int = 64, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None):
+        """
+        Constructor for the LSTM model.
+        Args:
+            latent_dims (int): Number of dimensions in the latent space.
+                Default is 6.
+            n_neurons (int): Number of neurons in the LSTM layers.
+                Default is 64.
+            optimizer (torch.optim.Optimizer): Optimizer for the model.
+                Default is None.
+            criterion (nn.Module): Loss function for the model.
+                Default is None.
+            device (torch.device): Device to be used for training.
+                Default is 'cuda' if available, else 'cpu'.
+        """
         super(LSTM, self).__init__()
         self.latent_dims = latent_dims
 
-        self.build_model(code_size=latent_dims)
+        self.build_model(code_size=latent_dims, n_neurons=n_neurons)
 
         if optimizer is not None:
             self.optimizer = optimizer
@@ -257,12 +320,14 @@ class LSTM(nn.Module):
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def build_model(self, n_neurons: int = 64, code_size: int = 6):
-        # self.model = nn.Sequential(
-        #     nn.LSTM(code_size, n_neurons, batch_first=True),
-        #     nn.LSTM(n_neurons, n_neurons, batch_first=True),
-        #     nn.LSTM(n_neurons, code_size, batch_first=True),
-        #     nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
-        # )
+        """
+        Function to build the LSTM model.
+        Args:
+            n_neurons (int): Number of neurons in the LSTM layers.
+                Default is 64.
+            code_size (int): Number of dimensions in the latent space.
+                Default is 6.
+        """
         self.models = nn.ModuleList([
             nn.LSTM(code_size, n_neurons, batch_first=True),
             nn.LSTM(n_neurons, n_neurons, batch_first=True),
@@ -270,12 +335,6 @@ class LSTM(nn.Module):
             nn.Linear(code_size, code_size) # Add a linear layer to remove affect of previous layers activation function
         ])
 
-        # for model in self.models:
-        #     for name, param in model.named_parameters():
-        #         if 'weight' in name:
-        #             nn.init.xavier_normal_(param)
-        #         else:
-        #             nn.init.zeros_(param)
         self.lstm_hidden = []
         for model in self.models:
             if isinstance(model, nn.LSTM):
@@ -301,6 +360,21 @@ class LSTM(nn.Module):
         return x
     
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
+        """
+        Function to train the LSTM model.
+        Args:
+            train_loader (DataLoader): DataLoader object for the training data.
+            n_epochs (int): Number of epochs to train the model.
+                Default is 1.
+            optimizer (torch.optim.Optimizer): Optimizer for the model.
+                Default is None.
+            criterion (nn.Module): Loss function for the model.
+                Default is None.
+            device (torch.device): Device to be used for training.
+                Default is None.
+            verbose (bool): Whether to print the loss at each epoch.
+                Default is True.
+        """
         if optimizer is not None:
             self.optimizer = optimizer
         if criterion is not None:
@@ -324,6 +398,9 @@ class LSTM(nn.Module):
                 print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
 
     def save_model(self, path:str):
+        """
+        Function to save the model. Creates folders if they do not exist.
+        """
         folder = os.path.dirname(path)
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -333,11 +410,88 @@ class LSTM(nn.Module):
         self.load_state_dict(torch.load(path))
 
     def plot_loss(self, path:str=None):
+        """
+        Function to plot the loss of the model. If path is specified, the plot is saved to the path.
+        """
         plt.figure()
         self.criterion.loss_tracker.plot_losses()
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
         if path is not None:
+            folder = os.path.dirname(path)
+            if not os.path.exists(folder):
+                os.makedirs(folder)
             savefig(path)
         else:
             plt.show()
+
+class VAE_LSTM(nn.Module):
+    def __init__(self, vae:VAE=None, lstm:LSTM=None, input_dims:int = None, latent_dims:int = None, n_channels:int = 1, n_kernels_vae:int = 512, n_neurons_lstm:int = 64, optimizer_vae:optim.Optimizer = None, optimizer_lstm:optim.Optimizer = None, criterion_vae:nn.Module = None, criterion_lstm:nn.Module = None, device:torch.device = None, normalized:bool = True):
+        
+        super(VAE_LSTM, self).__init__()
+        if vae is not None:
+            self.vae = vae
+        else:
+            self.vae = VAE(input_dims, latent_dims, n_channels, n_kernels_vae, optimizer_vae, criterion_vae, device, normalized)
+        self.input_dims = self.vae.latent_dims
+        self.latent_dims = self.vae.latent_dims
+
+        if lstm is not None:
+            self.lstm = lstm
+        else:
+            self.lstm = LSTM(self.latent_dims, n_neurons_lstm, optimizer_lstm, criterion_lstm, device)
+        
+    def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
+        self.vae.train_model(train_loader, n_epochs, optimizer, criterion, device, verbose)
+        
+        encoded_training_data = self.vae.encode_data(train_loader)
+        lstm_dataloader = DataLoaderGenerator(encoded_training_data, batch_size=train_loader.batch_size)
+        train_loader_lstm = lstm_dataloader.generate()
+
+        self.lstm.train_model(train_loader_lstm, n_epochs, optimizer, criterion, device, verbose)
+
+    def save_model(self, path:str):
+        self.vae.save_model(path + "_vae")
+        self.lstm.save_model(path + "_lstm")
+
+    def load_model(self, path:str):
+        self.vae.load_model(path + "_vae")
+        self.lstm.load_model(path + "_lstm")
+    
+    def load_vae_model(self, path:str):
+        self.vae.load_model(path)
+
+    def load_lstm_model(self, path:str):
+        self.lstm.load_model(path)
+
+    def plot_loss(self, path:str=None):
+        if path is None:
+            self.vae.plot_loss()
+            self.lstm.plot_loss()
+        else:
+            self.vae.plot_loss(path + "_vae")
+            self.lstm.plot_loss(path + "_lstm")
+
+    def evaluate(self, dataloader:DataLoader, threshold, labels=None, device:torch.device=None):
+        """
+        Method to evaluate the model on a dataset.
+        """
+        # Need to add metrics such as Precision, Recall, and F1 score
+        # Method for if labels given or not.
+        # Find best threshold for anomaly detection
+        # Return windows with anomalies. Maybe add in way to unroll windows.
+
+        if device is not None:
+            self.device = device
+
+        self.to(self.device)
+        self.eval()
+        #embeddings = []
+        with torch.no_grad():
+            for input, _ in dataloader:
+                input = input.to(self.device)
+                vae_output = self.vae(input)
+                lstm_output = self.lstm(vae_output[2])
+                output = self.vae.decoder(lstm_output)
+                
+
