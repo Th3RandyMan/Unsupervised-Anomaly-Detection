@@ -1,7 +1,6 @@
 from typing import List
 import torch
 import numpy as np
-from matplotlib.pyplot import savefig
 
 import torch.nn as nn
 import torch.optim as optim
@@ -279,6 +278,215 @@ class VAE(nn.Module):
         else:
             plt.show()
 
+    def get_reconstruction_error(self, test_data:np.ndarray, device:torch.device=None):
+        """
+        Method to evaluate the model on a dataset.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            device (torch.device): Device to be used for training.
+                Default is None.
+        """
+        from Utils.processing import window_data
+
+        if device is not None:
+            self.device = device
+
+        self.to(self.device)
+        self.eval()
+        self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
+
+        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
+        test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
+        window_errors = torch.zeros(len(test_windowed_data))
+        with torch.no_grad():
+            for i, input in enumerate(test_windowed_data):  # Per Sample, not per batch
+                output = self(input)
+                window_errors[i] = torch.mean((input - output[-1])**2)
+        
+        reconstruction_error = torch.zeros(len(test_data))
+        weights = torch.zeros(len(test_data))
+        for i in range(len(test_data) - self.input_dims + 1):
+            weights[i:i+self.input_dims] += 1
+            reconstruction_error[i:i+self.input_dims] += window_errors[i]
+        reconstruction_error /= weights # Average the reconstruction error over the windows
+        return reconstruction_error
+         
+    def loc_anomalies(self, reconstruction_error:torch.Tensor, threshold:float=0.9, threshold_option:int=1):
+        """
+        Method to locate anomalies in the reconstruction error.
+        Args:
+            reconstruction_error (torch.Tensor): Reconstruction error from the model.
+            threshold (float): Threshold for anomaly detection.
+                Default is 0.9.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+        """
+        if threshold_option == 1:
+            # Option 1: Use the mean and standard deviation of the reconstruction error
+            error_threshold = torch.mean(reconstruction_error) + threshold * torch.std(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        elif threshold_option == 2:
+            # Option 2: Use percentage between max and min
+            error_threshold = threshold * (torch.max(reconstruction_error) - torch.min(reconstruction_error)) + torch.min(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        else:
+            raise ValueError("Threshold option must be 1 or 2.")
+
+    def get_anomalies(self, test_data:np.ndarray, threshold:float=0.9, threshold_option:int=1, device:torch.device=None):
+        """
+        Method to evaluate the model on a dataset.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            threshold (float): Threshold for anomaly detection.
+                If None, return the reconstruction error.
+                If not None, return the indices of the anomalies.
+                Default is 0.9.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+            device (torch.device): Device to be used for training.
+                Default is None.
+        """
+        reconstruction_error = self.get_reconstruction_error(test_data, device)
+        if threshold is None:
+            return reconstruction_error
+        else:
+            return self.loc_anomalies(reconstruction_error, threshold, threshold_option)
+    
+    def score_anomalies(self, detected_anomalies:torch.Tensor, true_anomalies:np.ndarray):
+        """
+        Get the precision, recall, and F1 score for the detected anomalies.
+        Args:
+            detected_anomalies (torch.Tensor): Anomalies detected by the model.
+            true_anomalies (np.ndarray): True anomalies in the data.
+        """
+        true_positives = len(np.intersect1d(detected_anomalies, true_anomalies))
+        false_positives = len(np.setdiff1d(detected_anomalies, true_anomalies))
+        false_negatives = len(np.setdiff1d(true_anomalies, detected_anomalies))
+        
+        if true_positives + false_positives == 0:
+            precision = 1
+        else:
+            precision = true_positives / (true_positives + false_positives)
+        
+        recall = true_positives / (true_positives + false_negatives)
+
+        if precision + recall == 0:
+            f1_score = 0
+        else:
+            f1_score = 2 * precision * recall / (precision + recall)
+
+        return precision, recall, f1_score
+    
+    def augment_anomalies(self, detected_anomalies:torch.Tensor, true_anomalies:np.ndarray):
+        """
+        Method for reducing impact of consecutive windows with the same anomaly.
+        Both detected anomalies and true anomalies are lists of indices.
+        Args:
+            detected_anomalies (torch.Tensor): Anomalies detected by the model.
+            true_anomalies (np.ndarray): True anomalies in the data.
+        Returns:
+            torch.Tensor: Detected anomalies after discounting.
+        """
+        extended_detected_anomalies = list(detected_anomalies)
+        for tru_anom in true_anomalies:
+            for det_anom in detected_anomalies:
+                if det_anom in tru_anom:
+                    original_det = set(extended_detected_anomalies)
+                    current_anom = set(tru_anom)
+                    extended_detected_anomalies += list(original_det - current_anom)
+        
+        return torch.tensor(extended_detected_anomalies).sort()#.values
+
+        
+    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None):
+        """
+        Method to evaluate the model on a dataset. Requires the true anomalies.
+        Attempts to find the best threshold for anomaly detection.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            anomalies (np.ndarray): True anomalies in the data.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+            device (torch.device): Device to be used for training.
+                Default is None.
+            verbose (bool): Whether to print the results.
+                Default is True.
+            plot (bool): Whether to plot the results.
+                Default is False.
+            path (str): Path to save the plot.
+                Default is None.
+        Returns:
+            float: Best threshold for anomaly detection.
+            float: Precision at the best threshold.
+            float: Recall at the best threshold.
+            float: F1 Score at the best threshold.
+            float: Best threshold for augmented anomaly detection.
+            float: Precision at the best threshold for augmented anomaly detection.
+            float: Recall at the best threshold for augmented anomaly detection.
+            float: F1 Score at the best threshold for augmented anomaly detection.
+        """
+        # Need to add metrics such as Precision, Recall, and F1 score
+        reconstruction_error = self.get_reconstruction_error(test_data, device)
+        if anomalies is None:
+            raise ValueError("Anomalies must be specified.")
+        
+        #threshold_list = np.linspace(0.1, 1, 10)
+        # threshold_list = np.linspace(0.4, 1, 25)
+        threshold_list = np.linspace(0.1, 1, 37)
+
+        precisions = np.zeros(len(threshold_list))
+        recalls = np.zeros(len(threshold_list))
+        f1_scores = np.zeros(len(threshold_list))
+        aug_precisions = np.zeros(len(threshold_list))
+        aug_recalls = np.zeros(len(threshold_list))
+        aug_f1_scores = np.zeros(len(threshold_list))
+        for i, threshold in enumerate(threshold_list):
+            detected_anomalies = self.loc_anomalies(reconstruction_error, threshold, threshold_option)
+            precisions[i], recalls[i], f1_scores[i] = self.score_anomalies(detected_anomalies, anomalies)
+            aug_detected_anomalies = self.augment_anomalies(detected_anomalies, anomalies)
+            aug_precisions[i], aug_recalls[i], aug_f1_scores[i] = self.score_anomalies(aug_detected_anomalies, anomalies)
+            if verbose:
+                print(f"Threshold: {threshold}, Precision: {precisions[i]}, Recall: {recalls[i]}, F1 Score: {f1_scores[i]}")
+                print(f"\tAugmented Precision: {aug_precisions[i]}, Augmented Recall: {aug_recalls[i]}, Augmented F1 Score: {aug_f1_scores[i]}")
+
+        if plot:  
+            plt.figure(figsize=(12, 6))
+
+            # Plotting the first subplot
+            plt.subplot(1, 2, 1)
+            plt.plot(threshold_list, precisions, label="Precision")
+            plt.plot(threshold_list, recalls, label="Recall")
+            plt.plot(threshold_list, f1_scores, label="F1 Score")
+            plt.xlabel("Threshold")
+            plt.ylabel("Score")
+            plt.legend()
+
+            # Plotting the second subplot
+            plt.subplot(1, 2, 2)
+            plt.plot(threshold_list, aug_precisions, label="Precision")
+            plt.plot(threshold_list, aug_recalls, label="Recall")
+            plt.plot(threshold_list, aug_f1_scores, label="F1 Score")
+            plt.xlabel("Threshold")
+            plt.ylabel("Score")
+            plt.legend()
+
+            if path is not None:
+                folder = os.path.dirname(path)
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+                plt.savefig(path)
+            else:
+                plt.show()
+
+        best_index = np.argmax(f1_scores)
+        best_index_aug = np.argmax(aug_f1_scores)
+        return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
 
 
 
@@ -433,7 +641,7 @@ class LSTM(nn.Module):
             folder = os.path.dirname(path)
             if not os.path.exists(folder):
                 os.makedirs(folder)
-            savefig(path)
+            plt.savefig(path)
         else:
             plt.show()
     
@@ -498,29 +706,64 @@ class VAE_LSTM(nn.Module):
             self.vae.plot_loss(path + "_vae")
             self.lstm.plot_loss(path + "_lstm")
 
-    # def evaluate(self, dataloader:DataLoader, threshold, labels=None, device:torch.device=None):
-    #     """
-    #     Method to evaluate the model on a dataset.
-    #     """
-    #     # Need to add metrics such as Precision, Recall, and F1 score
-    #     # Method for if labels given or not.
-    #     # Find best threshold for anomaly detection
-    #     # Return windows with anomalies. Maybe add in way to unroll windows.
+    def get_reconstruction_error(self, test_data:np.ndarray, device:torch.device=None):
+        """
+        Method to evaluate the model on a dataset.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            device (torch.device): Device to be used for training.
+                Default is None.
+        """
+        from Utils.processing import window_data
 
-    #     if device is not None:
-    #         self.device = device
+        if device is not None:
+            self.device = device
 
-    #     self.to(self.device)
-    #     self.eval()
-    #     reconstruction_error = torch.zeros(len(dataloader.dataset)) # Does this work?
-    #     with torch.no_grad():
-    #         for i, (input, _) in enumerate(dataloader):
-    #             input = input.to(self.device)
-    #             vae_output = self.vae(input)
-    #             lstm_output = self.lstm(vae_output[2])
-    #             output = self.vae.decoder(lstm_output)
-    #             reconstruction_error[i] = 
-                
+        self.to(self.device)
+        self.eval()
+        self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
+
+        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
+        test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
+        window_errors = torch.zeros(len(test_windowed_data))
+        with torch.no_grad():
+            for i, input in enumerate(test_windowed_data):  # Per Sample, not per batch
+                vae_output = self.vae(input)
+                lstm_output = self.lstm(vae_output[2]) # Using on going memory versus batch memory
+                output = self.vae.decoder(lstm_output)
+                window_errors[i] = torch.mean((input - output)**2)
+        
+        reconstruction_error = torch.zeros(len(test_data))
+        weights = torch.zeros(len(test_data))
+        for i in range(len(test_data) - self.input_dims + 1):
+            weights[i:i+self.input_dims] += 1
+            reconstruction_error[i:i+self.input_dims] += window_errors[i]
+        reconstruction_error /= weights # Average the reconstruction error over the windows
+        return reconstruction_error
+         
+    def loc_anomalies(self, reconstruction_error:torch.Tensor, threshold:float=0.9, threshold_option:int=1):
+        """
+        Method to locate anomalies in the reconstruction error.
+        Args:
+            reconstruction_error (torch.Tensor): Reconstruction error from the model.
+            threshold (float): Threshold for anomaly detection.
+                Default is 0.9.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+        """
+        if threshold_option == 1:
+            # Option 1: Use the mean and standard deviation of the reconstruction error
+            error_threshold = torch.mean(reconstruction_error) + threshold * torch.std(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        elif threshold_option == 2:
+            # Option 2: Use percentage between max and min
+            error_threshold = threshold * (torch.max(reconstruction_error) - torch.min(reconstruction_error)) + torch.min(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        else:
+            raise ValueError("Threshold option must be 1 or 2.")
+
     def get_anomalies(self, test_data:np.ndarray, threshold:float=0.9, threshold_option:int=1, device:torch.device=None):
         """
         Method to evaluate the model on a dataset.
@@ -537,59 +780,167 @@ class VAE_LSTM(nn.Module):
             device (torch.device): Device to be used for training.
                 Default is None.
         """
-        from Utils.processing import window_data
-        # Need to add metrics such as Precision, Recall, and F1 score
-        # Method for if labels given or not.
-        # Find best threshold for anomaly detection
-        # Return windows with anomalies. Maybe add in way to unroll windows.
-
-        if device is not None:
-            self.device = device
-
-        self.to(self.device)
-        self.eval()
-        self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
-
-        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
-        test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
-        reconstruction_error = torch.zeros(len(test_windowed_data))
-        with torch.no_grad():
-            for i, input in enumerate(test_windowed_data):  # Per Sample, not per batch
-                vae_output = self.vae(input)
-                lstm_output = self.lstm(vae_output[2]) # Using on going memory versus batch memory
-                output = self.vae.decoder(lstm_output)
-                reconstruction_error[i] = torch.mean((input - output)**2)
-        
+        reconstruction_error = self.get_reconstruction_error(test_data, device)
         if threshold is None:
             return reconstruction_error
-        
-        if threshold_option == 1:
-            # Option 1: Use the mean and standard deviation of the reconstruction error
-            error_threshold = torch.mean(reconstruction_error) + threshold * torch.std(reconstruction_error)
-            return torch.where(reconstruction_error > error_threshold)
-        elif threshold_option == 2:
-            # Option 2: Use percentage between max and min
-            error_threshold = threshold * (torch.max(reconstruction_error) - torch.min(reconstruction_error)) + torch.min(reconstruction_error)
-            return torch.where(reconstruction_error > error_threshold)
         else:
-            raise ValueError("Threshold option must be 1 or 2.")
-        
-    def evaluate(self, test_data:np.ndarray, device:torch.device=None):
+            return self.loc_anomalies(reconstruction_error, threshold, threshold_option)
+    
+    def score_anomalies(self, detected_anomalies:torch.Tensor, true_anomalies:np.ndarray):
         """
-        Method to evaluate the model on a dataset.
+        Get the precision, recall, and F1 score for the detected anomalies.
+        Args:
+            detected_anomalies (torch.Tensor): Anomalies detected by the model.
+            true_anomalies (np.ndarray): True anomalies in the data.
+        """
+        true_positives = len(np.intersect1d(detected_anomalies, true_anomalies))
+        false_positives = len(np.setdiff1d(detected_anomalies, true_anomalies))
+        false_negatives = len(np.setdiff1d(true_anomalies, detected_anomalies))
+        
+        if true_positives + false_positives == 0:
+            precision = 1
+        else:
+            precision = true_positives / (true_positives + false_positives)
+        
+        recall = true_positives / (true_positives + false_negatives)
+
+        if precision + recall == 0:
+            f1_score = 0
+        else:
+            f1_score = 2 * precision * recall / (precision + recall)
+
+        return precision, recall, f1_score
+    
+    def augment_anomalies(self, detected_anomalies:torch.Tensor, true_anomalies:np.ndarray):
+        """
+        Method for reducing impact of consecutive windows with the same anomaly.
+        Both detected anomalies and true anomalies are lists of indices.
+        Args:
+            detected_anomalies (torch.Tensor): Anomalies detected by the model.
+            true_anomalies (np.ndarray): True anomalies in the data.
+        Returns:
+            torch.Tensor: Detected anomalies after discounting.
+        """
+        extended_detected_anomalies = list(detected_anomalies)
+        for tru_anom in true_anomalies:
+            for det_anom in detected_anomalies:
+                if det_anom in tru_anom:
+                    original_det = set(extended_detected_anomalies)
+                    current_anom = set(tru_anom)
+                    extended_detected_anomalies += list(original_det - current_anom)
+        
+        return torch.tensor(extended_detected_anomalies).sort()#.values
+
+        
+    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None):
+        """
+        Method to evaluate the model on a dataset. Requires the true anomalies.
+        Attempts to find the best threshold for anomaly detection.
         Args:
             test_data (np.ndarray): Test data to be evaluated.
-            threshold (float): Threshold for anomaly detection.
-                If None, return the reconstruction error.
-                If not None, return the indices of the anomalies.
-                Default is 0.9.
+            anomalies (np.ndarray): True anomalies in the data.
             threshold_option (int): Option for threshold calculation.
                 1: Use the mean and standard deviation of the reconstruction error.
                 2: Use percentage between max and min.
                 Default is 1.
             device (torch.device): Device to be used for training.
                 Default is None.
+            verbose (bool): Whether to print the results.
+                Default is True.
+            plot (bool): Whether to plot the results.
+                Default is False.
+            path (str): Path to save the plot.
+                Default is None.
+        Returns:
+            float: Best threshold for anomaly detection.
+            float: Precision at the best threshold.
+            float: Recall at the best threshold.
+            float: F1 Score at the best threshold.
+            float: Best threshold for augmented anomaly detection.
+            float: Precision at the best threshold for augmented anomaly detection.
+            float: Recall at the best threshold for augmented anomaly detection.
+            float: F1 Score at the best threshold for augmented anomaly detection.
         """
-        recon_error = self.get_anomalies(test_data, None, None, device)
-        # Need to unroll window somewhere
         # Need to add metrics such as Precision, Recall, and F1 score
+        reconstruction_error = self.get_reconstruction_error(test_data, device)
+        if anomalies is None:
+            raise ValueError("Anomalies must be specified.")
+        
+        #threshold_list = np.linspace(0.1, 1, 10)
+        # threshold_list = np.linspace(0.4, 1, 25)
+        threshold_list = np.linspace(0.1, 1, 37)
+
+        precisions = np.zeros(len(threshold_list))
+        recalls = np.zeros(len(threshold_list))
+        f1_scores = np.zeros(len(threshold_list))
+        aug_precisions = np.zeros(len(threshold_list))
+        aug_recalls = np.zeros(len(threshold_list))
+        aug_f1_scores = np.zeros(len(threshold_list))
+        for i, threshold in enumerate(threshold_list):
+            detected_anomalies = self.loc_anomalies(reconstruction_error, threshold, threshold_option)
+            precisions[i], recalls[i], f1_scores[i] = self.score_anomalies(detected_anomalies, anomalies)
+            aug_detected_anomalies = self.augment_anomalies(detected_anomalies, anomalies)
+            aug_precisions[i], aug_recalls[i], aug_f1_scores[i] = self.score_anomalies(aug_detected_anomalies, anomalies)
+            if verbose:
+                print(f"Threshold: {threshold}, Precision: {precisions[i]}, Recall: {recalls[i]}, F1 Score: {f1_scores[i]}")
+                print(f"\tAugmented Precision: {aug_precisions[i]}, Augmented Recall: {aug_recalls[i]}, Augmented F1 Score: {aug_f1_scores[i]}")
+
+        if plot:  
+            plt.figure(figsize=(12, 6))
+
+            # Plotting the first subplot
+            plt.subplot(1, 2, 1)
+            plt.plot(threshold_list, precisions, label="Precision")
+            plt.plot(threshold_list, recalls, label="Recall")
+            plt.plot(threshold_list, f1_scores, label="F1 Score")
+            plt.xlabel("Threshold")
+            plt.ylabel("Score")
+            plt.legend()
+
+            # Plotting the second subplot
+            plt.subplot(1, 2, 2)
+            plt.plot(threshold_list, aug_precisions, label="Precision")
+            plt.plot(threshold_list, aug_recalls, label="Recall")
+            plt.plot(threshold_list, aug_f1_scores, label="F1 Score")
+            plt.xlabel("Threshold")
+            plt.ylabel("Score")
+            plt.legend()
+
+            if path is not None:
+                folder = os.path.dirname(path)
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+                plt.savefig(path)
+            else:
+                plt.show()
+            # plt.figure()
+            # plt.plot(threshold_list, precisions, label="Precision")
+            # plt.plot(threshold_list, recalls, label="Recall")
+            # plt.plot(threshold_list, f1_scores, label="F1 Score")
+            # plt.xlabel("Threshold")
+            # plt.ylabel("Score")
+            # plt.legend()
+            # if path is not None:
+            #     folder = os.path.dirname(path)
+            #     if not os.path.exists(folder):
+            #         os.makedirs(folder)
+            #     savefig(path)
+            # else:
+            #     plt.show()
+
+            # plt.figure()
+            # plt.plot(threshold_list, aug_precisions, label="Precision")
+            # plt.plot(threshold_list, aug_recalls, label="Recall")
+            # plt.plot(threshold_list, aug_f1_scores, label="F1 Score")
+            # plt.xlabel("Threshold")
+            # plt.ylabel("Score")
+            # plt.legend()
+            # if path is not None:
+            #     savefig(path+"_augmented")
+            # else:
+            #     plt.show() 
+
+        #return precisions, recalls, f1_scores, aug_precisions, aug_recalls, aug_f1_scores
+        best_index = np.argmax(f1_scores)
+        best_index_aug = np.argmax(aug_f1_scores)
+        return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
