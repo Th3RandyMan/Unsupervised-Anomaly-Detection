@@ -179,7 +179,7 @@ class SumLoss(LossFunction):
     look at the loss tracker for the individual loss_funcs/i.e. the constituents
     """
 
-    def __init__(self, loss_funcs: List[LossFunction], weights: List[float], name: Optional[str] = None):
+    def __init__(self, loss_funcs: List[LossFunction], weights: List[float] = None, name: Optional[str] = None):
         super().__init__(name)
         # Check validitiy of the loss names
         all_names = []
@@ -190,8 +190,11 @@ class SumLoss(LossFunction):
         # must be unique
         assert len(all_names) == len(set(all_names)), "Loss function names should be unique!"
 
-        # Check validity of the weights
-        assert len(loss_funcs) == len(weights), "Number of loss functions and weights should match!"
+        if weights is not None:
+            # Check validity of the weights
+            assert len(loss_funcs) == len(weights), "Number of loss functions and weights should match!"
+        else:
+            weights = [1.0] * len(loss_funcs)
 
         self.loss_funcs = loss_funcs
         self.weights_tensor = torch.tensor(weights, dtype=torch.float32)
@@ -261,8 +264,10 @@ class KLDLoss(LossFunction):
         mu, std_dev, code_sample, _ = model_output
         # DOUBLE CHECK CODE_SAMPLE LENGTH IS RIGHT. MAYBE USE INDEXING
         # CHECK IF mu.pow(2) is fastest
-        KLD = -0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
-        
+        #KLD = -0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+        #KLD = 0.5 * torch.sum(len(code_sample) + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2)) # Dont do this....
+        KLD = -0.5 * torch.sum(1 + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+
         #_, mu, logvar = model_output
         #KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         self.loss_tracker_step_update(KLD.item(), trainer_mode)
@@ -272,26 +277,26 @@ class KLDLoss(LossFunction):
         return f"KL Divergence Loss between the latent space and the normal distribution"
 
 
-class ELBOLoss(LossFunction):
-    def __init__(self, name: str = "elbo", sigma: float = 0.1, sigma2_offset: float = 1e-2):
-        super().__init__(name)
-        self.sigma2 = torch.tensor(sigma ** 2 + sigma2_offset)
+# class ELBOLoss(LossFunction):
+#     def __init__(self, name: str = "elbo", sigma: float = 0.1, sigma2_offset: float = 1e-2):
+#         super().__init__(name)
+#         self.sigma2 = torch.tensor(sigma ** 2 + sigma2_offset)
 
-    def __call__(self, model_output, model_input, trainer_mode: str) -> torch.Tensor:
-        mu, std_dev, code_sample, decoded = model_output
-        # KLD = -0.5 * torch.sum(code_sample.shape[-1] + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
-        KLD = -0.5 * (torch.tensor(code_sample.shape[-1]) + torch.sum(2*torch.log(std_dev) - mu.pow(2) - std_dev.pow(2)))
-        two_pi = torch.tensor(model_input.shape[-1] * 3.14159265358979323846)
-        #NOT DONE
-        sigma_reg = torch.tensor(model_input.shape[-1] / 2) * torch.log(self.sigma2)
-        weighted_recon_error = torch.mean(torch.sum(torch.square(model_input - decoded), dim=1) / (2 * self.sigma2))
+#     def __call__(self, model_output, model_input, trainer_mode: str) -> torch.Tensor:
+#         mu, std_dev, code_sample, decoded = model_output
+#         # KLD = -0.5 * torch.sum(code_sample.shape[-1] + 2 * torch.log(std_dev) - mu.pow(2) - std_dev.pow(2))
+#         KLD = -0.5 * (torch.tensor(code_sample.shape[-1]) + torch.sum(2*torch.log(std_dev) - mu.pow(2) - std_dev.pow(2)))
+#         two_pi = torch.tensor(model_input.shape[-1] * 3.14159265358979323846)
+#         #NOT DONE
+#         sigma_reg = torch.tensor(model_input.shape[-1] / 2) * torch.log(self.sigma2)
+#         weighted_recon_error = torch.mean(torch.sum(torch.square(model_input - decoded), dim=1) / (2 * self.sigma2))
 
-        elbo = two_pi + KLD  + sigma_reg + weighted_recon_error
-        self.loss_tracker_step_update(elbo.item(), trainer_mode)
-        return elbo
+#         elbo = two_pi + KLD  + sigma_reg + weighted_recon_error
+#         self.loss_tracker_step_update(elbo.item(), trainer_mode)
+#         return elbo
     
-    def __str__(self):
-        return f"Evidence Lower Bound Loss"
+#     def __str__(self):
+#         return f"Evidence Lower Bound Loss"
 
 class MSELoss(LossFunction):
     #def __init__(self, feature_size: int, name: str = "mse"):
@@ -301,12 +306,41 @@ class MSELoss(LossFunction):
     
     def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
         if isinstance(model_output, tuple):
-            recon_x, _, __ = model_output
+            if len(model_output) == 4:
+                mu, std_dev, code_sample, recon_x = model_output  # for vae
+            elif len(model_output) == 3:
+                recon_x, _, __ = model_output   # for lstm
         else:
             recon_x = model_output
         x = dataloader_data  # Model Input
         # loss = F.mse_loss(recon_x, x.view(-1, self.feature_size), reduction='sum')
         loss = F.mse_loss(recon_x, x, reduction='sum')
+        self.loss_tracker_step_update(loss.item(), trainer_mode)
+        return loss
+    
+    def __str__(self):
+        return f"Mean Square Error Loss"
+    
+class BCELoss(LossFunction):
+    #def __init__(self, feature_size: int, name: str = "bce"):
+    def __init__(self, name: str = "bce"):
+        super().__init__(name)
+        #self.feature_size = feature_size
+    
+    def __call__(self, model_output, dataloader_data, trainer_mode: str) -> torch.Tensor:
+        if isinstance(model_output, tuple):
+            if len(model_output) == 4:
+                #_, __, ___, recon_x = model_output  # for vae
+                recon_x = model_output[-1]
+            elif len(model_output) == 3:
+                recon_x = model_output[0]
+                #recon_x, _, __ = model_output   # for lstm
+            #recon_x, _, __ = model_output
+        else:
+            recon_x = model_output
+        x = dataloader_data  # Model Input
+        #loss = F.binary_cross_entropy(recon_x, x.view(-1, self.feature_size), reduction='sum')
+        loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
         self.loss_tracker_step_update(loss.item(), trainer_mode)
         return loss
     

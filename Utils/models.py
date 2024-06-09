@@ -9,7 +9,7 @@ import matplotlib.pylab as plt
 import torch.distributions as tdist
 from torch.utils.data import DataLoader
 from Utils.dataloader import DataLoaderGenerator
-from Utils.lossfunctions import ELBOLoss, MSELoss
+from Utils.lossfunctions import KLDLoss, SumLoss, MSELoss
 from Utils.processing import same_padding, force_padding
 import os
 
@@ -35,7 +35,7 @@ class VAE(nn.Module):
             optimizer (torch.optim.Optimizer): Optimizer for the model.
                 Default is Adam with learning rate 4e-4 and betas (0.9, 0.95).
             criterion (nn.Module): Loss function for the model.
-                Default is ELBOLoss.
+                Default is sum of KLD and BCE.
             device (torch.device): Device to be used for training.
                 Default is 'cuda' if available, else 'cpu'.
             normalized (bool): Whether the input data is normalized
@@ -58,7 +58,7 @@ class VAE(nn.Module):
             self.optimizer = optim.Adam(self.parameters(), lr=4e-4, betas=(0.9, 0.95))
 
         if criterion is None:
-            self.criterion = ELBOLoss()
+            self.criterion = SumLoss([KLDLoss(), MSELoss()])
         else:
             self.criterion = criterion
 
@@ -301,7 +301,8 @@ class LSTM(nn.Module):
         """
         super(LSTM, self).__init__()
         self.latent_dims = latent_dims
-
+        self.batch_run = True  # Use this for selecting memory characteristics
+        self.first_sample = True    # Use this for first sample not in batch
         self.build_model(code_size=latent_dims, n_neurons=n_neurons)
 
         if optimizer is not None:
@@ -341,22 +342,32 @@ class LSTM(nn.Module):
                 self.lstm_hidden.append(model.hidden_size)
 
     def forward(self, x):
-        # Initialize hidden state with zeros
-        if len(x.shape) > 2:    # If the input is a batch
-            h = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
-            c = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
-        else:   # If the input is a single sample
-            h = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
-            c = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+        if self.batch_run or self.first_sample:
+            # Initialize hidden state with zeros
+            if len(x.shape) > 2:    # If the input is a batch
+                h = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+                c = [torch.zeros(1, x.size(0), hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+            else:   # If the input is a single sample
+                h = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
+                c = [torch.zeros(1, hidden_size).to(device=x.device) for hidden_size in self.lstm_hidden]
 
-        h = [torch.nn.init.xavier_normal_(h_) for h_ in h]
-        c = [torch.nn.init.xavier_normal_(c_) for c_ in c]
+            h = [torch.nn.init.xavier_normal_(h_) for h_ in h]
+            c = [torch.nn.init.xavier_normal_(c_) for c_ in c]
+            self.first_sample = False
+        else:
+            h = self.h
+            c = self.c
 
-        for model, h_, c_ in zip(self.models, h, c):
+        #for model, h_, c_ in zip(self.models, h, c):
+        for i, model in enumerate(self.models):
             if isinstance(model, nn.LSTM):
-                x, (h_,c_) = model(x,(h_,c_))    # Get the output and hidden states
+                #x, (h_,c_) = model(x,(h_,c_))    # Get the output and hidden states
+                x, (h[i],c[i]) = model(x,(h[i],c[i]))
             else:
                 x = model(x)
+        
+        self.h = h
+        self.c = c
         return x
     
     def train_model(self, train_loader:DataLoader, n_epochs:int=1, optimizer:optim.Optimizer=None, criterion:nn.Module=None, device:torch.device=None, verbose:bool=True):
@@ -384,6 +395,7 @@ class LSTM(nn.Module):
         
         self.to(self.device)
         self.train()    # Could move this if recording validation loss
+        self.hidden_state = "batch_reset"
         train_loss = 0
         for epoch in range(n_epochs):
             for data, _ in train_loader:
@@ -424,7 +436,21 @@ class LSTM(nn.Module):
             savefig(path)
         else:
             plt.show()
+    
+    def sample_run(self):
+        """
+        Function to run the model on a single sample.
+        """
+        self.batch_run = False
+        self.first_sample = True
 
+    def batch_run(self):
+        """
+        Function to run the model on a batch.
+        """
+        self.batch_run = True
+
+        
 class VAE_LSTM(nn.Module):
     def __init__(self, vae:VAE=None, lstm:LSTM=None, input_dims:int = None, latent_dims:int = None, n_channels:int = 1, n_kernels_vae:int = 512, n_neurons_lstm:int = 64, optimizer_vae:optim.Optimizer = None, optimizer_lstm:optim.Optimizer = None, criterion_vae:nn.Module = None, criterion_lstm:nn.Module = None, device:torch.device = None, normalized:bool = True):
         
@@ -472,10 +498,46 @@ class VAE_LSTM(nn.Module):
             self.vae.plot_loss(path + "_vae")
             self.lstm.plot_loss(path + "_lstm")
 
-    def evaluate(self, dataloader:DataLoader, threshold, labels=None, device:torch.device=None):
+    # def evaluate(self, dataloader:DataLoader, threshold, labels=None, device:torch.device=None):
+    #     """
+    #     Method to evaluate the model on a dataset.
+    #     """
+    #     # Need to add metrics such as Precision, Recall, and F1 score
+    #     # Method for if labels given or not.
+    #     # Find best threshold for anomaly detection
+    #     # Return windows with anomalies. Maybe add in way to unroll windows.
+
+    #     if device is not None:
+    #         self.device = device
+
+    #     self.to(self.device)
+    #     self.eval()
+    #     reconstruction_error = torch.zeros(len(dataloader.dataset)) # Does this work?
+    #     with torch.no_grad():
+    #         for i, (input, _) in enumerate(dataloader):
+    #             input = input.to(self.device)
+    #             vae_output = self.vae(input)
+    #             lstm_output = self.lstm(vae_output[2])
+    #             output = self.vae.decoder(lstm_output)
+    #             reconstruction_error[i] = 
+                
+    def get_anomalies(self, test_data:np.ndarray, threshold:float=0.9, threshold_option:int=1, device:torch.device=None):
         """
         Method to evaluate the model on a dataset.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            threshold (float): Threshold for anomaly detection.
+                If None, return the reconstruction error.
+                If not None, return the indices of the anomalies.
+                Default is 0.9.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+            device (torch.device): Device to be used for training.
+                Default is None.
         """
+        from Utils.processing import window_data
         # Need to add metrics such as Precision, Recall, and F1 score
         # Method for if labels given or not.
         # Find best threshold for anomaly detection
@@ -486,12 +548,48 @@ class VAE_LSTM(nn.Module):
 
         self.to(self.device)
         self.eval()
-        #embeddings = []
-        with torch.no_grad():
-            for input, _ in dataloader:
-                input = input.to(self.device)
-                vae_output = self.vae(input)
-                lstm_output = self.lstm(vae_output[2])
-                output = self.vae.decoder(lstm_output)
-                
+        self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
 
+        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
+        test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
+        reconstruction_error = torch.zeros(len(test_windowed_data))
+        with torch.no_grad():
+            for i, input in enumerate(test_windowed_data):  # Per Sample, not per batch
+                vae_output = self.vae(input)
+                lstm_output = self.lstm(vae_output[2]) # Using on going memory versus batch memory
+                output = self.vae.decoder(lstm_output)
+                reconstruction_error[i] = torch.mean((input - output)**2)
+        
+        if threshold is None:
+            return reconstruction_error
+        
+        if threshold_option == 1:
+            # Option 1: Use the mean and standard deviation of the reconstruction error
+            error_threshold = torch.mean(reconstruction_error) + threshold * torch.std(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        elif threshold_option == 2:
+            # Option 2: Use percentage between max and min
+            error_threshold = threshold * (torch.max(reconstruction_error) - torch.min(reconstruction_error)) + torch.min(reconstruction_error)
+            return torch.where(reconstruction_error > error_threshold)
+        else:
+            raise ValueError("Threshold option must be 1 or 2.")
+        
+    def evaluate(self, test_data:np.ndarray, device:torch.device=None):
+        """
+        Method to evaluate the model on a dataset.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            threshold (float): Threshold for anomaly detection.
+                If None, return the reconstruction error.
+                If not None, return the indices of the anomalies.
+                Default is 0.9.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+            device (torch.device): Device to be used for training.
+                Default is None.
+        """
+        recon_error = self.get_anomalies(test_data, None, None, device)
+        # Need to unroll window somewhere
+        # Need to add metrics such as Precision, Recall, and F1 score
