@@ -1,9 +1,9 @@
 from copy import deepcopy
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from pandas import DataFrame
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 
 class DataLoaderGenerator:
     """
@@ -38,7 +38,19 @@ class DataLoaderGenerator:
             }
         else:
             self.data_loader_params = deepcopy(data_loader_params)
-            
+
+    def separate_batch_data(self):
+        """
+        Method to take list of data and separate it into batches.
+        """ 
+
+        dataset_list: List[TensorDataset] = []
+        for data in self.data:
+            data = data.astype(np.float32)
+            if len(data.shape) == 2:
+                data = data[:,np.newaxis,:] # Add channel dimension
+            dataset_list.append(TensorDataset(torch.tensor(data).to(self.device), torch.tensor(data).to(self.device)))
+        return ConcatDataset(dataset_list)
 
     def generate(
             self, 
@@ -81,6 +93,8 @@ class DataLoaderGenerator:
             train_data = self.data.to_numpy()
         elif isinstance(self.data, np.ndarray):
             train_data = self.data
+        elif isinstance(self.data, list):   # If data is a list of numpy arrays
+            return DataLoader(self.separate_batch_data(), batch_size=self.batch_size, **self.data_loader_params)
         else:
             train_data = np.array(self.data)
 
