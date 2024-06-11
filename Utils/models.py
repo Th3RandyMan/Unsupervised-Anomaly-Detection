@@ -571,7 +571,7 @@ class VAE(nn.Module):
 
         return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
 
-    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, threshold_option:int=1, device:torch.device=None, path:str=None, getfig:bool=False):
+    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, normalize:bool=True, threshold_option:int=1, device:torch.device=None, path:str=None, getfig:bool=False):
         """
         Method to plot the anomalies detected by the model.
         Args:
@@ -579,6 +579,7 @@ class VAE(nn.Module):
             threshold (float): Threshold for anomaly detection.
             anomalies (np.ndarray): True anomalies in the data. Boolean array.
             Fs (int): Sampling frequency of the data.
+            normalize (bool): Whether to normalize the data before plotting.
             threshold_option (int): Option for threshold calculation.
                 1: Use the mean and standard deviation of the reconstruction error.
                 2: Use percentage between max and min.
@@ -591,6 +592,9 @@ class VAE(nn.Module):
         """
         if device is not None:
             self.device = device
+        if normalize:
+            show_data = test_data
+            test_data = (test_data - np.mean(test_data)) / np.std(test_data)
 
         if anomalies is not None:
             if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
@@ -613,6 +617,9 @@ class VAE(nn.Module):
         if anomalies is not None:
            plt.vlines(t[anom_loc], ymin=np.min(test_data), ymax=np.max(test_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
         plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
+
+        if normalize:
+            test_data = show_data
 
         plt.plot(t, test_data, linewidth=2.5, color='black')
         plt.plot(t, test_data, label="Data", color='b')
