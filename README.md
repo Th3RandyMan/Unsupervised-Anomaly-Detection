@@ -10,12 +10,13 @@ Project for detecting anomalies without ground truth.
 * Sklearn
 
 ## Usage
-To get started, `train_model.ipynb` is an example notebook on how to use the anomaly detection. It holds method to combine data for data loading, setting up and training models, and combining models for anomaly detection. There are many options to evaluation, and metrics and plots are provided.
+To get started, `train_model.ipynb` is an example notebook on how to use the anomaly detection. It holds method to combine data for data loading, setting up and training models, and combining models for anomaly detection. There are many options to evaluation, and metrics and plots are provided. Use more than 10 epochs...
 
 ## Tuning
 All tuning can be done by giving parameters to already implemented functions. For example, training a model will take parameters such as optimizer, criterion, ect.
 
 * Window size for the windowed data. Example uses 100, but this is very small. For fast sampling, this should be largely increased.
+* Change number of epochs. Examples has 10, but try 20, 50, 100
 * Latent space for the VAE is default at 6, but a larger latent space will probably improve performance.
 * VAE evaluation has not been tested, but it is identical to VAE-LSTM evaluation.
 * When evaluating, there are two methods for thresholding and two different methods for getting f1 score. Why not try both?
