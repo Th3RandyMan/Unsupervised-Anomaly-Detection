@@ -57,7 +57,8 @@ class VAE(nn.Module):
             self.optimizer = optim.Adam(self.parameters(), lr=4e-4, betas=(0.9, 0.95))
 
         if criterion is None:
-            self.criterion = SumLoss([KLDLoss(), MSELoss()])
+            #self.criterion = SumLoss([KLDLoss(), MSELoss()])   # Has not worked well...
+            self.criterion = MSELoss()
         else:
             self.criterion = criterion
 
@@ -293,7 +294,6 @@ class VAE(nn.Module):
 
         self.to(self.device)
         self.eval()
-        self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
 
         test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
         test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
@@ -667,8 +667,9 @@ class VAE_LSTM(nn.Module):
             self.vae = vae
         else:
             self.vae = VAE(input_dims, latent_dims, n_channels, n_kernels_vae, optimizer_vae, criterion_vae, device, normalized)
-        self.input_dims = self.vae.latent_dims
+        self.input_dims = self.vae.input_dims
         self.latent_dims = self.vae.latent_dims
+        self.device = self.vae.device
 
         if lstm is not None:
             self.lstm = lstm
@@ -715,6 +716,7 @@ class VAE_LSTM(nn.Module):
                 Default is None.
         """
         from Utils.processing import window_data
+        BATCH_SIZE = 512
 
         if device is not None:
             self.device = device
@@ -723,19 +725,34 @@ class VAE_LSTM(nn.Module):
         self.eval()
         self.lstm.sample_run() # Set the LSTM to run on a single sample with ongoing memory
 
-        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1)
+        test_windowed_data = window_data(test_data, window_size=self.input_dims, stride=1).astype(np.float32)
+        if len(test_windowed_data.shape) == 2:
+            test_windowed_data = test_windowed_data[:, np.newaxis, :]   # Add dim for channel
+        shape = test_windowed_data.shape
+        pad = BATCH_SIZE - shape[0] % BATCH_SIZE
+        test_windowed_data = np.pad(test_windowed_data, ((0, pad), (0, 0), (0, 0)))
+        test_windowed_data = test_windowed_data.reshape(-1, BATCH_SIZE, shape[1], shape[2])
+
         test_windowed_data = torch.tensor(test_windowed_data).to(self.device)
-        window_errors = torch.zeros(len(test_windowed_data))
+        window_errors = torch.zeros(shape[0]).to(self.device)
+        # with torch.no_grad():
+        #     vae_outputs = self.vae(test_windowed_data)
+        #     lstm_outputs = self.lstm(vae_outputs[2])
+        #     outputs = self.vae.decoder(lstm_outputs)
+        #     window_errors = torch.mean((test_windowed_data - outputs)**2, dim=(1, 2, 3))
+        
         with torch.no_grad():
-            for i, input in enumerate(test_windowed_data):  # Per Sample, not per batch
+            for i, input in enumerate(test_windowed_data):
+                if i == len(test_windowed_data) - 1:    # If the last batch
+                    input = input[:shape[0] % BATCH_SIZE]
                 vae_output = self.vae(input)
                 lstm_output = self.lstm(vae_output[2]) # Using on going memory versus batch memory
                 output = self.vae.decoder(lstm_output)
-                window_errors[i] = torch.mean((input - output)**2)
+                window_errors[i*BATCH_SIZE:i*BATCH_SIZE + len(input)] = torch.mean((input - output)**2, dim=(1, 2))
         
-        reconstruction_error = torch.zeros(len(test_data))
-        weights = torch.zeros(len(test_data))
-        for i in range(len(test_data) - self.input_dims + 1):
+        reconstruction_error = torch.zeros(len(test_data)).to(self.device)
+        weights = torch.zeros(len(test_data)).to(self.device)
+        for i in range(len(window_errors)):
             weights[i:i+self.input_dims] += 1
             reconstruction_error[i:i+self.input_dims] += window_errors[i]
         reconstruction_error /= weights # Average the reconstruction error over the windows
@@ -756,11 +773,11 @@ class VAE_LSTM(nn.Module):
         if threshold_option == 1:
             # Option 1: Use the mean and standard deviation of the reconstruction error
             error_threshold = torch.mean(reconstruction_error) + threshold * torch.std(reconstruction_error)
-            return torch.where(reconstruction_error > error_threshold)
+            return torch.where(reconstruction_error > error_threshold)[0].to('cpu')
         elif threshold_option == 2:
             # Option 2: Use percentage between max and min
             error_threshold = threshold * (torch.max(reconstruction_error) - torch.min(reconstruction_error)) + torch.min(reconstruction_error)
-            return torch.where(reconstruction_error > error_threshold)
+            return torch.where(reconstruction_error > error_threshold)[0].to('cpu')
         else:
             raise ValueError("Threshold option must be 1 or 2.")
 
@@ -821,15 +838,24 @@ class VAE_LSTM(nn.Module):
         Returns:
             torch.Tensor: Detected anomalies after discounting.
         """
+        # extended_detected_anomalies = list(detected_anomalies)
+        # for tru_anom in true_anomalies:
+        #     for det_anom in detected_anomalies:
+        #         if det_anom in tru_anom:
+        #             original_det = set(extended_detected_anomalies)
+        #             current_anom = set([tru_anom])
+        #             extended_detected_anomalies += list(original_det - current_anom)
+
         extended_detected_anomalies = list(detected_anomalies)
-        for tru_anom in true_anomalies:
-            for det_anom in detected_anomalies:
-                if det_anom in tru_anom:
-                    original_det = set(extended_detected_anomalies)
-                    current_anom = set(tru_anom)
-                    extended_detected_anomalies += list(original_det - current_anom)
+        extended_detected_anomalies_set = set(extended_detected_anomalies)
         
-        return torch.tensor(extended_detected_anomalies).sort()#.values
+        for true_anomaly in true_anomalies:
+            if true_anomaly not in extended_detected_anomalies_set:
+                extended_detected_anomalies.append(true_anomaly)
+        
+        extended_detected_anomalies.sort()
+        
+        return torch.tensor(extended_detected_anomalies).sort().values
 
         
     def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None):
@@ -861,12 +887,21 @@ class VAE_LSTM(nn.Module):
             float: Recall at the best threshold for augmented anomaly detection.
             float: F1 Score at the best threshold for augmented anomaly detection.
         """
-        # Need to add metrics such as Precision, Recall, and F1 score
         reconstruction_error = self.get_reconstruction_error(test_data, device)
         if anomalies is None:
             raise ValueError("Anomalies must be specified.")
+        if isinstance(anomalies, list):
+            anomalies = np.array(anomalies)
+            
+        if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
+            anom_loc = np.where(anomalies)[0]
+        elif isinstance(anomalies, np.ndarray) and anomalies.dtype != np.int64 and len(anomalies) < len(test_data):
+            anom_loc = anomalies
+        else:
+            raise ValueError("Anomalies must be a list or numpy array of indices or booleans.")
+        anom_loc = torch.tensor(anom_loc)
         
-        #threshold_list = np.linspace(0.1, 1, 10)
+        # threshold_list = np.linspace(0.1, 1, 10)
         # threshold_list = np.linspace(0.4, 1, 25)
         threshold_list = np.linspace(0.1, 1, 37)
 
@@ -878,9 +913,9 @@ class VAE_LSTM(nn.Module):
         aug_f1_scores = np.zeros(len(threshold_list))
         for i, threshold in enumerate(threshold_list):
             detected_anomalies = self.loc_anomalies(reconstruction_error, threshold, threshold_option)
-            precisions[i], recalls[i], f1_scores[i] = self.score_anomalies(detected_anomalies, anomalies)
-            aug_detected_anomalies = self.augment_anomalies(detected_anomalies, anomalies)
-            aug_precisions[i], aug_recalls[i], aug_f1_scores[i] = self.score_anomalies(aug_detected_anomalies, anomalies)
+            precisions[i], recalls[i], f1_scores[i] = self.score_anomalies(detected_anomalies, anom_loc)
+            aug_detected_anomalies = self.augment_anomalies(detected_anomalies, anom_loc)
+            aug_precisions[i], aug_recalls[i], aug_f1_scores[i] = self.score_anomalies(aug_detected_anomalies, anom_loc)
             if verbose:
                 print(f"Threshold: {threshold}, Precision: {precisions[i]}, Recall: {recalls[i]}, F1 Score: {f1_scores[i]}")
                 print(f"\tAugmented Precision: {aug_precisions[i]}, Augmented Recall: {aug_recalls[i]}, Augmented F1 Score: {aug_f1_scores[i]}")
@@ -913,34 +948,44 @@ class VAE_LSTM(nn.Module):
                 plt.savefig(path)
             else:
                 plt.show()
-            # plt.figure()
-            # plt.plot(threshold_list, precisions, label="Precision")
-            # plt.plot(threshold_list, recalls, label="Recall")
-            # plt.plot(threshold_list, f1_scores, label="F1 Score")
-            # plt.xlabel("Threshold")
-            # plt.ylabel("Score")
-            # plt.legend()
-            # if path is not None:
-            #     folder = os.path.dirname(path)
-            #     if not os.path.exists(folder):
-            #         os.makedirs(folder)
-            #     savefig(path)
-            # else:
-            #     plt.show()
 
-            # plt.figure()
-            # plt.plot(threshold_list, aug_precisions, label="Precision")
-            # plt.plot(threshold_list, aug_recalls, label="Recall")
-            # plt.plot(threshold_list, aug_f1_scores, label="F1 Score")
-            # plt.xlabel("Threshold")
-            # plt.ylabel("Score")
-            # plt.legend()
-            # if path is not None:
-            #     savefig(path+"_augmented")
-            # else:
-            #     plt.show() 
-
-        #return precisions, recalls, f1_scores, aug_precisions, aug_recalls, aug_f1_scores
         best_index = np.argmax(f1_scores)
         best_index_aug = np.argmax(aug_f1_scores)
         return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
+
+    def plot_anomaly(self, test_data:np.ndarray, anomalies:np.ndarray, threshold, threshold_option:int=1, device:torch.device=None, path:str=None):
+        """
+        Method to plot the anomalies detected by the model.
+        Args:
+            test_data (np.ndarray): Test data to be evaluated.
+            anomalies (np.ndarray): True anomalies in the data.
+            threshold (float): Threshold for anomaly detection.
+            threshold_option (int): Option for threshold calculation.
+                1: Use the mean and standard deviation of the reconstruction error.
+                2: Use percentage between max and min.
+                Default is 1.
+            device (torch.device): Device to be used for training.
+                Default is None.
+            path (str): Path to save the plot.
+                Default is None.
+        """
+        if device is not None:
+            self.device = device
+        detected_anomalies = self.get_anomalies(test_data, threshold=threshold, threshold_option=threshold_option, device=self.device)
+
+        plt.figure()
+        
+        plt.plot(test_data)
+        plt.scatter(anomalies, test_data[anomalies], color='r', label="True Anomalies")
+        plt.scatter(detected_anomalies, test_data[detected_anomalies], color='g', label="Detected Anomalies")
+        
+        plt.xlabel("Time")
+        plt.ylabel("Value")
+        plt.legend()
+        if path is not None:
+            folder = os.path.dirname(path)
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+            plt.savefig(path)
+        else:
+            plt.show()
