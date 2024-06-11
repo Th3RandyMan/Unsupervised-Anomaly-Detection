@@ -7,23 +7,23 @@ from typing import List
 import numpy as np
 import pandas as pd
 from Utils.dataloader import DataLoaderGenerator
-from Utils.models import LSTM, VAE
+from Utils.models import LSTM, VAE, VAE_LSTM
 from Utils.processing import window_data
+from Utils.mdreport import MarkdownReport
 
 
 # Constant Training parameters
 FS = 100
 TRAINING_PATH = r"C:\Users\randa\OneDrive - University of California, Davis\Documents\Davis\2024 xSpring\EEC 289A\Unsupervised-Anomaly-Detection\TFO Data\Clean IMU"
+TESTING_PATH = r"C:\Users\randa\OneDrive - University of California, Davis\Documents\Davis\2024 xSpring\EEC 289A\Unsupervised-Anomaly-Detection\TFO Data\IMU"
+ANOMALY_PATH = r"C:\Users\randa\OneDrive - University of California, Davis\Documents\Davis\2024 xSpring\EEC 289A\Unsupervised-Anomaly-Detection\TFO Data\IMU Anomaly Locations"
+BASE_NAME = "IMU_Training"
 
-
-
-
-
-
-
-
-
-
+# Sweep parameters
+N_EPOCHS = [20, 50, 100]
+WINDOW_SIZES = [100, 200, 500]
+LATENT_DIMS = [6, 12, 24]
+BATCH_SIZES = [32, 128, 512]
 
 
 
@@ -84,6 +84,9 @@ if __name__ == "__main__":
 
     # Save lstm model
     lstm.save_model("Results/Models/" + run_name + "_lstm_model.pth")
+
+    # Evaluate model
+    vae_lstm = VAE_LSTM(vae, lstm)
 
 
 

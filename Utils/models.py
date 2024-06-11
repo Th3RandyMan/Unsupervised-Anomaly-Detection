@@ -14,12 +14,6 @@ from Utils.processing import same_padding, force_padding
 import os
 
 
-# class BaseModel(nn.Module):
-#     def __init__(self, config):
-#         super(BaseModel, self).__init__()
-#         self.config = config
-
-# class VAEmodel(BaseModel):
 class VAE(nn.Module):
     def __init__(self, input_dims:int, latent_dims:int = 6, n_channels:int = 1, n_kernels:int = 512, optimizer:optim.Optimizer = None, criterion:nn.Module = None, device:torch.device = None, normalized:bool = True):
         """
@@ -264,11 +258,11 @@ class VAE(nn.Module):
     def load_model(self, path:str):
         self.load_state_dict(torch.load(path))
 
-    def plot_loss(self, path:str=None):
+    def plot_loss(self, path:str=None, getfig:bool=False):
         """
         Function to plot the loss of the model. If path is specified, the plot is saved to the path.
         """
-        plt.figure()
+        fig = plt.figure()
         self.criterion.loss_tracker.plot_losses()
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
@@ -277,6 +271,8 @@ class VAE(nn.Module):
             if not os.path.exists(folder):
                 os.makedirs(folder)
             plt.savefig(path)
+        elif getfig:
+            return fig
         else:
             plt.show()
 
@@ -476,7 +472,7 @@ class VAE(nn.Module):
         return torch.tensor(extended_detected_anomalies).sort().values
 
         
-    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None):
+    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None, getfig:bool=False):
         """
         Method to evaluate the model on a dataset. Requires the true anomalies.
         Attempts to find the best threshold for anomaly detection.
@@ -495,6 +491,7 @@ class VAE(nn.Module):
                 Default is False.
             path (str): Path to save the plot.
                 Default is None.
+            getfig (bool): Whether to return the figure.
         Returns:
             float: Best threshold for anomaly detection.
             float: Precision at the best threshold.
@@ -504,6 +501,7 @@ class VAE(nn.Module):
             float: Precision at the best threshold for augmented anomaly detection.
             float: Recall at the best threshold for augmented anomaly detection.
             float: F1 Score at the best threshold for augmented anomaly detection.
+            fig: Figure object if getfig is True.
         """
         reconstruction_error = self.get_reconstruction_error(test_data, device)
         if anomalies is None:
@@ -538,8 +536,10 @@ class VAE(nn.Module):
                 print(f"Threshold: {threshold}, Precision: {precisions[i]}, Recall: {recalls[i]}, F1 Score: {f1_scores[i]}")
                 print(f"\tAugmented Precision: {aug_precisions[i]}, Augmented Recall: {aug_recalls[i]}, Augmented F1 Score: {aug_f1_scores[i]}")
 
-        if plot:  
-            plt.figure(figsize=(12, 6))
+        best_index = np.argmax(f1_scores)
+        best_index_aug = np.argmax(aug_f1_scores)
+        if plot or path is not None or getfig:  
+            fig = plt.figure(figsize=(12, 6))
 
             # Plotting the first subplot
             plt.subplot(1, 2, 1)
@@ -564,14 +564,14 @@ class VAE(nn.Module):
                 if not os.path.exists(folder):
                     os.makedirs(folder)
                 plt.savefig(path)
+            elif getfig:
+                return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug], fig
             else:
                 plt.show()
 
-        best_index = np.argmax(f1_scores)
-        best_index_aug = np.argmax(aug_f1_scores)
         return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
 
-    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, threshold_option:int=1, device:torch.device=None, path:str=None):
+    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, threshold_option:int=1, device:torch.device=None, path:str=None, getfig:bool=False):
         """
         Method to plot the anomalies detected by the model.
         Args:
@@ -587,6 +587,7 @@ class VAE(nn.Module):
                 Default is None.
             path (str): Path to save the plot.
                 Default is None.
+            getfig (bool): Whether to return the figure.
         """
         if device is not None:
             self.device = device
@@ -604,7 +605,7 @@ class VAE(nn.Module):
         detected_anomalies = self.get_anomalies(test_data, threshold=threshold, threshold_option=threshold_option, device=self.device)
 
         t = np.arange(len(test_data)) / Fs
-        plt.figure()
+        fig = plt.figure()
         # plt.plot(t, test_data)
 
         #plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=1)
@@ -647,6 +648,8 @@ class VAE(nn.Module):
             if not os.path.exists(folder):
                 os.makedirs(folder)
             plt.savefig(path)
+        elif getfig:
+            return fig
         else:
             plt.show()
 
@@ -789,11 +792,11 @@ class LSTM(nn.Module):
     def load_model(self, path:str):
         self.load_state_dict(torch.load(path))
 
-    def plot_loss(self, path:str=None):
+    def plot_loss(self, path:str=None, getfig:bool=False):
         """
         Function to plot the loss of the model. If path is specified, the plot is saved to the path.
         """
-        plt.figure()
+        fig = plt.figure()
         self.criterion.loss_tracker.plot_losses()
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
@@ -802,6 +805,8 @@ class LSTM(nn.Module):
             if not os.path.exists(folder):
                 os.makedirs(folder)
             plt.savefig(path)
+        elif getfig:
+            return fig
         else:
             plt.show()
     
@@ -1039,7 +1044,7 @@ class VAE_LSTM(nn.Module):
         return torch.tensor(extended_detected_anomalies).sort().values
 
         
-    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None):
+    def evaluate(self, test_data:np.ndarray, anomalies:np.ndarray, threshold_option:int=1, device:torch.device=None, verbose:bool=True, plot:bool=False, path:str=None, getfig:bool=False):
         """
         Method to evaluate the model on a dataset. Requires the true anomalies.
         Attempts to find the best threshold for anomaly detection.
@@ -1058,6 +1063,7 @@ class VAE_LSTM(nn.Module):
                 Default is False.
             path (str): Path to save the plot.
                 Default is None.
+            getfig (bool): Whether to return the figure.
         Returns:
             float: Best threshold for anomaly detection.
             float: Precision at the best threshold.
@@ -1067,6 +1073,7 @@ class VAE_LSTM(nn.Module):
             float: Precision at the best threshold for augmented anomaly detection.
             float: Recall at the best threshold for augmented anomaly detection.
             float: F1 Score at the best threshold for augmented anomaly detection.
+            fig: Figure object if getfig is True.
         """
         reconstruction_error = self.get_reconstruction_error(test_data, device)
         if anomalies is None:
@@ -1101,8 +1108,11 @@ class VAE_LSTM(nn.Module):
                 print(f"Threshold: {threshold}, Precision: {precisions[i]}, Recall: {recalls[i]}, F1 Score: {f1_scores[i]}")
                 print(f"\tAugmented Precision: {aug_precisions[i]}, Augmented Recall: {aug_recalls[i]}, Augmented F1 Score: {aug_f1_scores[i]}")
 
-        if plot:  
-            plt.figure(figsize=(12, 6))
+        best_index = np.argmax(f1_scores)
+        best_index_aug = np.argmax(aug_f1_scores)
+
+        if plot or path is not None or getfig:  
+            fig = plt.figure(figsize=(12, 6))
 
             # Plotting the first subplot
             plt.subplot(1, 2, 1)
@@ -1127,14 +1137,14 @@ class VAE_LSTM(nn.Module):
                 if not os.path.exists(folder):
                     os.makedirs(folder)
                 plt.savefig(path)
+            elif getfig:
+                return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug], fig
             else:
                 plt.show()
 
-        best_index = np.argmax(f1_scores)
-        best_index_aug = np.argmax(aug_f1_scores)
         return threshold_list[best_index], precisions[best_index], recalls[best_index], f1_scores[best_index], threshold_list[best_index_aug], aug_precisions[best_index_aug], aug_recalls[best_index_aug], aug_f1_scores[best_index_aug]
 
-    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, threshold_option:int=1, device:torch.device=None, path:str=None):
+    def plot_anomaly(self, test_data:np.ndarray, threshold, anomalies:np.ndarray=None, Fs=1, normalize:bool=True, threshold_option:int=1, device:torch.device=None, path:str=None, getfig:bool=False):
         """
         Method to plot the anomalies detected by the model.
         Args:
@@ -1142,6 +1152,7 @@ class VAE_LSTM(nn.Module):
             threshold (float): Threshold for anomaly detection.
             anomalies (np.ndarray): True anomalies in the data. Boolean array.
             Fs (int): Sampling frequency of the data.
+            normalize (bool): Whether to normalize the data before plotting.
             threshold_option (int): Option for threshold calculation.
                 1: Use the mean and standard deviation of the reconstruction error.
                 2: Use percentage between max and min.
@@ -1150,9 +1161,13 @@ class VAE_LSTM(nn.Module):
                 Default is None.
             path (str): Path to save the plot.
                 Default is None.
+            getfig (bool): Whether to return the figure.
         """
         if device is not None:
             self.device = device
+        if normalize:
+            show_data = test_data
+            test_data = (test_data - np.mean(test_data)) / np.std(test_data)
 
         if anomalies is not None:
             if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
@@ -1167,7 +1182,7 @@ class VAE_LSTM(nn.Module):
         detected_anomalies = self.get_anomalies(test_data, threshold=threshold, threshold_option=threshold_option, device=self.device)
 
         t = np.arange(len(test_data)) / Fs
-        plt.figure()
+        fig = plt.figure()
         # plt.plot(t, test_data)
 
         #plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=1)
@@ -1175,6 +1190,9 @@ class VAE_LSTM(nn.Module):
         if anomalies is not None:
            plt.vlines(t[anom_loc], ymin=np.min(test_data), ymax=np.max(test_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
         plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
+
+        if normalize:
+            test_data = show_data
 
         plt.plot(t, test_data, linewidth=2.5, color='black')
         plt.plot(t, test_data, label="Data", color='b')
@@ -1210,5 +1228,7 @@ class VAE_LSTM(nn.Module):
             if not os.path.exists(folder):
                 os.makedirs(folder)
             plt.savefig(path)
+        elif getfig:
+            return fig
         else:
             plt.show()
