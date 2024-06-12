@@ -41,6 +41,8 @@ class MarkdownReport:
             title: Title that goes at the top of the markdown file.
             dpi: DPI of the images to be saved in the report. Default is 300.
         """
+        if type(save_directory) is str:
+            save_directory = Path(save_directory)
         self.save_directory = save_directory
         # Create the save directory if it doesn't exist
         self.save_directory.mkdir(exist_ok=True)

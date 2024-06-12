@@ -223,7 +223,7 @@ class VAE(nn.Module):
                 self.optimizer.step()        # Update the weights
             self.criterion.loss_tracker_epoch_update()
             if verbose:
-                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}", flush=True)
 
     def encode_data(self, dataloader:DataLoader, device:torch.device=None):
         """
@@ -593,7 +593,7 @@ class VAE(nn.Module):
         if device is not None:
             self.device = device
         if normalize:
-            show_data = test_data
+            show_data = test_data.copy()
             test_data = (test_data - np.mean(test_data)) / np.std(test_data)
 
         if anomalies is not None:
@@ -785,7 +785,7 @@ class LSTM(nn.Module):
                 self.optimizer.step()        # Update the weights
             self.criterion.loss_tracker_epoch_update()
             if verbose:
-                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}")
+                print(f"Epoch {epoch+1}/{n_epochs}, Loss: {loss.item()/len(data[0])}", flush=True)
 
     def save_model(self, path:str):
         """
@@ -1085,9 +1085,10 @@ class VAE_LSTM(nn.Module):
         reconstruction_error = self.get_reconstruction_error(test_data, device)
         if anomalies is None:
             raise ValueError("Anomalies must be specified.")
-        if isinstance(anomalies, list):
-            anomalies = np.array(anomalies)
-            
+        
+        anomalies = np.array(anomalies)
+        test_data = np.array(test_data)
+
         if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
             anom_loc = np.where(anomalies)[0]
         elif isinstance(anomalies, np.ndarray) and anomalies.dtype != np.int64 and len(anomalies) < len(test_data):
@@ -1170,13 +1171,16 @@ class VAE_LSTM(nn.Module):
                 Default is None.
             getfig (bool): Whether to return the figure.
         """
+        test_data = np.array(test_data)
+
         if device is not None:
             self.device = device
         if normalize:
-            show_data = test_data
+            show_data = test_data.copy()
             test_data = (test_data - np.mean(test_data)) / np.std(test_data)
 
         if anomalies is not None:
+            anomalies = np.array(anomalies)
             if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
                 anom_loc = np.where(anomalies)[0]
             elif isinstance(anomalies, np.ndarray) and anomalies.dtype != np.int64 and len(anomalies) < len(test_data):
