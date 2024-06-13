@@ -1242,7 +1242,10 @@ class VAE_LSTM(nn.Module):
         data_handle = mlines.Line2D([], [], color='b', linewidth=2.5, label='Data')
 
         # Add the custom handles to the legend
-        plt.legend(handles=[true_anomalies_handle, detected_anomalies_handle, data_handle])
+        if anomalies is not None:
+            plt.legend(handles=[true_anomalies_handle, detected_anomalies_handle, data_handle])
+        else:
+            plt.legend(handles=[detected_anomalies_handle, data_handle])
 
         if path is not None:
             folder = os.path.dirname(path)
