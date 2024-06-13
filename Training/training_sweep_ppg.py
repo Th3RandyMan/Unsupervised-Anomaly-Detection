@@ -22,6 +22,7 @@ from tqdm import tqdm
 FS = 100
 TRAINING_PATH = os.path.join(cwd, "TFO Data", "PPG", "Clean PPG")
 TESTING_PATH = os.path.join(cwd, "TFO Data", "PPG", "Artificial Anomalies","datafiles")
+EVAL_PATH = os.path.join(cwd, "TFO Data", "PPG", "Artificial Anomalies","ahomaly indices")
 # BASE_NAME = "IMU_Training"
 THRESHOLD_METHOD = 1
 
@@ -35,6 +36,7 @@ LATENT_DIMS = [6, 12, 24]
 if __name__ == "__main__":
     train_file_list = glob.glob(TRAINING_PATH + "/*.csv")
     test_file_list = glob.glob(TESTING_PATH + "/*.csv")
+    eval_file_list = glob.glob(TESTING_PATH + "/*.csv")
 
     # window_size = 100
     latent_dim = 6
@@ -67,7 +69,7 @@ if __name__ == "__main__":
                 # Load data from files
                 for f, file in enumerate(train_file_list):
                     # Add filter condition here if needed
-                    data = pd.read_csv(file)
+                    data = pd.read_csv(file, usecols=[0])
                     data = data.to_numpy().squeeze()
 
                     # Normalize data
@@ -154,7 +156,14 @@ if __name__ == "__main__":
                         for file in test_file_list:
                             report.add_text_report(f"Run {j} Testing Data", f"Testing on {file}\n")
                             df = pd.read_csv(file)
-                            eval_output = vae_lstm.evaluate(df['Dirty'], df['Anomaly'], threshold_option=THRESHOLD_METHOD, getfig=True)
+                            
+                            key = random_file.split('_')[-1].split('.')[0]
+                            eval_file = [filename for filename in filenames if filename.endswith(key + '.csv')][0]
+                            df_eval = pd.read_csv(file)
+
+                            channel = df.columns[0]
+                            
+                            eval_output = vae_lstm.evaluate(df[channel], df_eval[channel], threshold_option=THRESHOLD_METHOD, getfig=True)
                             print() # Separate between evaluation outputs
                             
                             # Save evaluation metrics
