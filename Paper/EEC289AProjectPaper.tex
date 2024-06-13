@@ -49,8 +49,13 @@ Here are some keywords...
 \IEEEPARstart{T}{his} is an introduction...
 
 \section{Methodology}
+Anomaly detection is represented by measuring the reconstruction error from a given deep learning model. For this system, a VAE and LSTM hybrid model is used for finding a latent space with a known distribution and capturing temporal information over time series data. This data is presented in a windowed fashion to locate anomalies within a given window. Evaluation of the anomaly detection will be measured using the harmonic mean of precision and recall (F1 score).
+
 \subsection{Preprocessing}
-Here is the preprocessing...
+The nature of the data used for this detection system does not need to be specific, but it does require being time series data. With a given window size, a sliding window will sample the original signal, and the VAE input and output will be equivalent to the size of the window. 
+
+As this data does not need to be labeled, it does need to be clean of noise or anomalies. This is due to the model learning the clean distribution of the data, and after training, the poor reconstruction of a signal will indicate the possibility of an anomaly.
+
 
 \subsection{Variational Autoencoder}
 Here is the VAE...
