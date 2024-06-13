@@ -157,8 +157,8 @@ if __name__ == "__main__":
                             report.add_text_report(f"Run {j} Testing Data", f"Testing on {file}\n")
                             df = pd.read_csv(file)
                             
-                            key = random_file.split('_')[-1].split('.')[0]
-                            eval_file = [filename for filename in filenames if filename.endswith(key + '.csv')][0]
+                            key = file.split('_')[-1].split('.')[0]
+                            eval_file = [filename for filename in eval_file_list if filename.endswith(key + '.csv')][0]
                             df_eval = pd.read_csv(file)
 
                             channel = df.columns[0]
