@@ -1099,7 +1099,7 @@ class VAE_LSTM(nn.Module):
         
         # threshold_list = np.linspace(0.1, 1, 10)
         # threshold_list = np.linspace(0.4, 1, 25)
-        threshold_list = np.linspace(0.1, 1, 37)
+        threshold_list = np.concatenate((np.linspace(0.1, 1, 37), np.linspace(1.5, 10, 18)))
 
         precisions = np.zeros(len(threshold_list))
         recalls = np.zeros(len(threshold_list))
