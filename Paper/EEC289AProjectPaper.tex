@@ -58,7 +58,8 @@ As this data does not need to be labeled, it does need to be clean of noise or a
 
 
 \subsection{Variational Autoencoder}
-Here is the VAE...
+An autoencoder structure establishes a method for compressing information into a dense latent space. This space is not unique as the original signal can be encoded into a large number of different latent spaces. The VAE addresses this non-regularization issue of the latent space by forcing the space to follow a specific distribution. For most VAEs, this distribution is a normal distribution, and the output of the encoder will be a prediction of mean and standard deviation. Once the distribution of the latent space is known, a sampling will be performed to create a latent vector for the input of the decoder. When the latent space distribution is well formed, the output of the decoder aims to reconstruct the original signal as best as possible.
+
 
 \subsection{Long Short-Term Memory}
 Here is the LSTM...
@@ -107,6 +108,9 @@ Here is some future work...
 
 \section*{Acknowledgment}
 The authors would like to thank Dr. Yubei Chen for his guidance and support on this course project.
+
+\section*{Contributions}
+Randall Fowler developed the models, evaluation methods, and experimented with the IMU dataset. Conor King experimented with the synthesized PPG dataset. Ajay Suresh experimented with the EV drive cycle dataset. All authors contributed to the writing of the paper.
 
 \begin{thebibliography}{1}
 \bibliographystyle{IEEEtran}
