@@ -38,5 +38,7 @@ This project was completed for EEC 289A at UC Davis, Spring 2024, by Randall Fow
     * BCE will work if input and output are scaled between 0 and 1.
     * With KLD and BCE, different combinations of summing loss functions can be done.
 * Improve evaluation plot. Colors are not pleasing.
+* Adjust LSTM dataset as it is training on current data rather than future data.
+* Maybe train the LSTM as the entire VAE-LSTM with the VAE frozen.
 * Multichannel input
     * Mostly implemented, but have not tested. Expected to have bugs. Issues will probably be in data loading and evaluation.
