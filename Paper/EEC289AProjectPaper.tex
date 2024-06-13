@@ -38,11 +38,11 @@
 \maketitle
 
 \begin{abstract}
-Here is a abstract...
+Here is an abstract...
 \end{abstract}
 
 \begin{IEEEkeywords}
-Here are some keywords...
+Anomaly Detection, VAE, LSTM, Time Series Data, IMU, PPG, EV Drive Cycle, Deep Learning
 \end{IEEEkeywords}
 
 \section{Introduction}
@@ -58,14 +58,21 @@ As this data does not need to be labeled, it does need to be clean of noise or a
 
 
 \subsection{Variational Autoencoder}
-An autoencoder structure establishes a method for compressing information into a dense latent space. This space is not unique as the original signal can be encoded into a large number of different latent spaces. The VAE addresses this non-regularization issue of the latent space by forcing the space to follow a specific distribution. For most VAEs, this distribution is a normal distribution, and the output of the encoder will be a prediction of mean and standard deviation. Once the distribution of the latent space is known, a sampling will be performed to create a latent vector for the input of the decoder. When the latent space distribution is well formed, the output of the decoder aims to reconstruct the original signal as best as possible.
+An autoencoder structure establishes a method for compressing information into a dense latent space. This space is not unique as the original signal can be encoded into a large number of different latent spaces. The VAE addresses this non-regularization issue of the latent space by forcing the space to follow a specific distribution\cite{vae_page}. For most VAEs, this distribution is a normal distribution, and the output of the encoder will be a prediction of mean and standard deviation. Once the distribution of the latent space is known, a sampling will be performed to create a latent vector for the input of the decoder. When the latent space distribution is well formed, the output of the decoder aims to reconstruct the original signal as best as possible.
 
+As the autoencoder represents encoder and decoder models, these structures can be created in a variety of ways. For this project, both will be presented by 1-dimensional convolutional layers with a leaky ReLU activation function and batch normalization. The number of samples per window will decrease while depth increases for every layer in the encoder structure. At the end of the encoder, the samples and depth are flattened and passed to linear layers to condense to the final latent space mean and standard deviation values. Samples from the normal distribution will be given to a decoder that is identical to the encoder, but with transpose convolutional layers to increase the size and decrease the depth. Padding for each layer is forced to maintain a consistent  linear decrease in the number of samples. For this architecture, four convolutional layers are used with a split set of linear layers for the mean and standard deviation prediction.
 
 \subsection{Long Short-Term Memory}
-Here is the LSTM...
+With a sampled latent space created from the encoder, the LSTM takes the current latent vector and attempts to predict the next sample. If the VAE is trained well, it should hold the distribution for the dataset, and the LSTM should learn the temporal differences between each latent window. The LSTM tracks previous outcomes by utilizing memory variables or acting as a state machine. Cell memory and hidden state become the long-term and short-term aspects of the model, and those components carry into the model as inputs \cite{lstm_page}. After each iteration, the memory variables will output to be used by another LSTM layer or dropped before other layers.
+
+A standard LSTM layer contains a tangent activation function, and the PyTorch library does not provide an option to adjust the activation function \cite{lstm_pytorch}. For this reason and the lack of activation function post latent space sampling, a linear layer is placed after the final LSTM layer to adjust for scaling.
 
 \subsection{VAE-LSTM Model Training}
-Here is the VAE-LSTM model training...
+Since the two models hold separate functions for the detection system, the training for the VAE and LSTM are handled separately. Both will use the same training set as the models will be combined after training. Batch size, loss function, and optimizer may vary between the two models.
+
+Loss function can differ greatly as the VAE can be trained with Kullback-Leibler (KL) divergence. This loss relates to the similarity between the latent space distribution and the unit normal distribution \cite{vae_page}. Essentially, it enables the latent space to hold this normal distribution shape. Reconstruction loss is another term that focuses on training the weights regardless of the latent space. The sum of the similarity and reconstruction loss promotes a smooth and continuous latent space while improving signal reconstruction.
+
+The LSTM only needs to focus on the error for prediction on known future samples. This error may be the same as reconstruction loss for the VAE. With the memory components, these need to be initialized properly when training. For each given batch, the batch needs to remain in sequential order, and the memory should be reset if batches are not in order. For predictions on an entire dataset, the memory should only be reset at the very beginning. When resetting, the cell memory and hidden state are initialized with a Normal Xavier Initialization \cite{xavier}. This sets the weights using a normal distribution with a mean of 0 and a variance dependent on the number of inputs and outputs of a layer.
 
 \subsection{Anomaly Detection}
 Here is the anomaly detection...
@@ -75,7 +82,7 @@ Here are the evaluation metrics...
 
 
 \section{Experiments}
-Here are the experiments...
+Talk about design decisions with the model and transition to the datasets used for the experiments.
 
 \subsection{Inertial Measurement Unit Dataset}
 Here is the dataset...
@@ -110,7 +117,10 @@ Here is some future work...
 The authors would like to thank Dr. Yubei Chen for his guidance and support on this course project.
 
 \section*{Contributions}
-Randall Fowler developed the models, evaluation methods, and experimented with the IMU dataset. Conor King experimented with the synthesized PPG dataset. Ajay Suresh experimented with the EV drive cycle dataset. All authors contributed to the writing of the paper.
+Randall Fowler developed the models, evaluation methods, and experimented with the IMU dataset. 
+Conor King experimented with the synthesized PPG dataset. 
+Ajay Suresh experimented with the EV drive cycle dataset. 
+All authors contributed to the writing of the paper.
 
 \begin{thebibliography}{1}
 \bibliographystyle{IEEEtran}
