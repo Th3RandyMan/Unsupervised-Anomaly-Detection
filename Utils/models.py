@@ -506,9 +506,10 @@ class VAE(nn.Module):
         reconstruction_error = self.get_reconstruction_error(test_data, device)
         if anomalies is None:
             raise ValueError("Anomalies must be specified.")
-        if isinstance(anomalies, list):
-            anomalies = np.array(anomalies)
-            
+        
+        anomalies = np.array(anomalies)
+        test_data = np.array(test_data)
+
         if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
             anom_loc = np.where(anomalies)[0]
         elif isinstance(anomalies, np.ndarray) and anomalies.dtype != np.int64 and len(anomalies) < len(test_data):
@@ -517,9 +518,11 @@ class VAE(nn.Module):
             raise ValueError("Anomalies must be a list or numpy array of indices or booleans.")
         anom_loc = torch.tensor(anom_loc)
         
-        # threshold_list = np.linspace(0.1, 1, 10)
-        # threshold_list = np.linspace(0.4, 1, 25)
-        threshold_list = np.linspace(0.1, 1, 37)
+        # Search for the best threshold
+        if threshold_option == 1:
+            threshold_list = np.concatenate((np.linspace(0.1, 1, 37), np.linspace(1.5, 10, 18)))
+        elif threshold_option == 2:
+            threshold_list = np.linspace(0.1, 1, 37)
 
         precisions = np.zeros(len(threshold_list))
         recalls = np.zeros(len(threshold_list))
@@ -538,6 +541,7 @@ class VAE(nn.Module):
 
         best_index = np.argmax(f1_scores)
         best_index_aug = np.argmax(aug_f1_scores)
+
         if plot or path is not None or getfig:  
             fig = plt.figure(figsize=(12, 6))
 
@@ -590,6 +594,8 @@ class VAE(nn.Module):
                 Default is None.
             getfig (bool): Whether to return the figure.
         """
+        test_data = np.array(test_data)
+
         if device is not None:
             self.device = device
         if normalize:
@@ -597,6 +603,7 @@ class VAE(nn.Module):
             test_data = (test_data - np.mean(test_data)) / np.std(test_data)
 
         if anomalies is not None:
+            anomalies = np.array(anomalies)
             if isinstance(anomalies, np.ndarray) and anomalies.dtype == bool and len(anomalies) == len(test_data):
                 anom_loc = np.where(anomalies)[0]
             elif isinstance(anomalies, np.ndarray) and anomalies.dtype != np.int64 and len(anomalies) < len(test_data):
@@ -615,8 +622,8 @@ class VAE(nn.Module):
         #plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=1)
 
         if anomalies is not None:
-           plt.vlines(t[anom_loc], ymin=np.min(test_data), ymax=np.max(test_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
-        plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
+           plt.vlines(t[anom_loc], ymin=np.min(show_data), ymax=np.max(show_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
+        plt.vlines(t[detected_anomalies], ymin=np.min(show_data), ymax=np.max(show_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
 
         if normalize:
             test_data = show_data
@@ -1097,9 +1104,11 @@ class VAE_LSTM(nn.Module):
             raise ValueError("Anomalies must be a list or numpy array of indices or booleans.")
         anom_loc = torch.tensor(anom_loc)
         
-        # threshold_list = np.linspace(0.1, 1, 10)
-        # threshold_list = np.linspace(0.4, 1, 25)
-        threshold_list = np.concatenate((np.linspace(0.1, 1, 37), np.linspace(1.5, 10, 18)))
+        # Search for the best threshold
+        if threshold_option == 1:
+            threshold_list = np.concatenate((np.linspace(0.1, 1, 37), np.linspace(1.5, 10, 18)))
+        elif threshold_option == 2:
+            threshold_list = np.linspace(0.1, 1, 37)
 
         precisions = np.zeros(len(threshold_list))
         recalls = np.zeros(len(threshold_list))
