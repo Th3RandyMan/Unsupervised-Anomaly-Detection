@@ -1199,8 +1199,8 @@ class VAE_LSTM(nn.Module):
         #plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=1)
 
         if anomalies is not None:
-           plt.vlines(t[anom_loc], ymin=np.min(test_data), ymax=np.max(test_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
-        plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
+           plt.vlines(t[anom_loc], ymin=np.min(show_data), ymax=np.max(show_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
+        plt.vlines(t[detected_anomalies], ymin=np.min(show_data), ymax=np.max(show_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
 
         if normalize:
             test_data = show_data
