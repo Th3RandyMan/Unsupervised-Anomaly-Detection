@@ -48,6 +48,23 @@ Anomaly Detection, VAE, LSTM, Time Series Data, IMU, PPG, EV Drive Cycle, Deep L
 \section{Introduction}
 \IEEEPARstart{T}{his} is an introduction...
 
+Anomaly detection in electric vehicles (EV) can be extremely useful for ensuring the reliability, safety, and efficiency of EVs. Identifying deviations from normal patterns, it helps in early detection of potential issues, preventing costly breakdowns and ensuring optimal performance. While there are a wide variety of applications within the EV space, this report choses to focus on the usage of anomaly detection for vehicle speed and battery voltage as examples.
+
+Anomaly detection for vehicle speed has several potential applications, including:
+
+\begin{itemize}
+    \item \textbf{Drivetrain Monitoring:} Detecting anomalies in vehicle speed helps in identifying issues with the drivetrain, including motor performance, transmission, and control systems.
+    \item \textbf{Driver Behavior Analysis:} Anomalies in speed patterns can also be used to analyze and improve driver behavior, ensuring safer and more efficient driving practices.
+    \item \textbf{Autonomous Driving Systems:} In autonomous vehicles, maintaining consistent speed is crucial. Anomaly detection in speed data helps in ensuring that the autonomous driving system is functioning correctly and safely.
+\end{itemize}
+
+Similarly, anomaly detection for battery voltage is also crucial for the following reasons:
+\begin{itemize}
+    \item \textbf{Battery Health Monitoring:} Detecting anomalies in vehicle speed helps in identifying issues with the drivetrain, including motor performance, transmission, and control systems.
+    \item \textbf{Energy Management Systems:} Anomalies in speed patterns can also be used to analyze and improve driver behavior, ensuring safer and more efficient driving practices.
+    \item \textbf{Safety and Reliability:} In autonomous vehicles, maintaining consistent speed is crucial. Anomaly detection in speed data helps in ensuring that the autonomous driving system is functioning correctly and safely.
+\end{itemize}
+
 \section{Methodology}
 Anomaly detection is represented by measuring the reconstruction error from a given deep learning model. For this system, a VAE and LSTM hybrid model is used for finding a latent space with a known distribution and capturing temporal information over time series data. This data is presented in a windowed fashion to locate anomalies within a given window. Evaluation of the anomaly detection will be measured using the harmonic mean of precision and recall (F1 score).
 
@@ -95,17 +112,43 @@ For the loss function of both models, mean square error (MSE) is selected for ea
 
 Training was conducted with varying batch sizes and number of epochs between different datasets, and an Adam optimizer with a learning rate of 4e-4 and betas as 0.9 and 0.95 was selected. 
 
-To explore the robust design of the detection model, three datasets are used for training and testing. IMU dataset consists of motion recordings from multiple sensors to detect movement or changes to the monitoring system. Synthesized PPG data is created from simulating tissue models and aims to detect motion, electromagnetic interference, and other variations of noise. *SOMETHING ABOUT AJAY’S DATA*
+To explore the robust design of the detection model, three datasets are used for training and testing. IMU dataset consists of motion recordings from multiple sensors to detect movement or changes to the monitoring system. Synthesized PPG data is created from simulating tissue models and aims to detect motion, electromagnetic interference, and other variations of noise. The Electric Vehicle Drive Cycle dataset is synthesized based on referenced data from a Cadillac EV that includes time series data for vehicle speed and battery voltage.
 
 \subsection{Inertial Measurement Unit Dataset}
 Here is the dataset...
 
 \subsection{Synthesized Photoplethysmography Dataset}
-Here is the dataset...
+Photoplethysmography (PPG) is a non-invasive optical technique used to detect blood volume changes in tissue. Light is beamed into tissue in one area and light intensity is detected in a different area; as blood is the dominant light absorber in tissue, changes in the intensity correlate with changes in blood volume. Different wavelengths of light are absorbed differently by oxygenated and deoxygenated hemoglobin, and different light source-detector separation distances probe different tissue depths. By using multiple wavelengths and detectors in a single run, the resultant time-series signals are rich in information about blood volume and oxygenation in different areas of the tissue.
+
+The data used in this experiment is synthesized using parameters taken from in-vivo data gathered from pregnant sheep. The time-varying frequency trace and the pulse shapes were taken directly from the sheep-data, while the magnitudes of the different components were determined via Montecarlo simulation. Thus, the data strongly resembles in-vivo data but is free from anomalies and is suitable for training the VAE-LSTM model. There are four sets of time-series data, each with 10 channels, corresponding to 5 detectors and two wavelengths.
+
+To test the model, the same data is augmented with artificial anomalies. The anomalies are short intervals with a DC shift. The number of anomalies, their positioning, their duration, and their intensity are all determined probabilistically, and are varied slightly between channels, also probabilistically. The data-points affected by the DC shifts are the true anomalies against which the trained VAE-LSTM model is tested. Figure \ref{ck_fig_1} provides an example of the clean data and the anomalous data, with true anomalies highlighted in red.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{ck_fig_1.png}
+    \caption{Example of synthesized PPG data (top) and the same data with added anomalies (bottom)}
+    \label{ck_fig_1}
+\end{figure}
 
 \subsection{Electric Vehicle Drive Cycle Dataset}
-Here is the dataset...
+The dataset consists of time-series data representing the speed of an EV over a drive cycle. The speed data is generated to simulate a realistic driving cycle with a sine wave pattern and added noise to showcase both overall and subtle realistic changes to speed between 0 and 60 mph. The dataset was designed and generated in comparison with actual city and highway drive cycle data from a Cadillac EV. Generating a synthetic dataset here allows for experimentation with further variability of speed and allows for wider coverage while maintaining the frequency of expected changes that a real dataset would see. A visualization of the synthetic speed dataset without anomalies is included in Fig \ref{aj_fig__1}.
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_1.png}
+    \caption{Synthetic Data showcasing Vehicle Speed}
+    \label{aj_fig__1}
+\end{figure}
+
+This dataset represents the voltage levels of an EV battery over a drive cycle. The data is generated to simulate typical voltage patterns for a 400V battery pack, with a sine wave pattern and noise - similarly generated in comparison with actual data obtained from a Cadillac EV. A visualization of the synthetic battery voltage dataset is included in Figure \ref{aj_fig__2}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_2.png}
+    \caption{Synthetic Data showcasing Battery Pack Voltage}
+    \label{aj_fig__2}
+\end{figure}
 
 \section{Results}
 Here are the results...
@@ -114,11 +157,75 @@ Here are the results...
 Here is the dataset...
 
 \subsection{Synthesized Photoplethysmography}
-Here is the dataset...
+The performance of the VAE-LSTM model on the synthesized PPG data with artificial anomalies was somewhat varied. As expected, it depends enormously on the chosen threshold value.
+
+When the best threshold without anomaly augmentation is used, the performance is generally good, as exhibited by Figure \ref{ck_fig_2}. The small anomaly to the far right of the data is not detected, but its magnitude is so small that that seems reasonable.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{ck_fig_2.png}
+    \caption{Example of good performance of the model. Slight false negative on the far right}
+    \label{ck_fig_2}
+\end{figure}
+
+However, sometimes that thresholding level causes the model to suffer from extreme overprediction, and the best threshold found during testing with anomaly augmentation works better, as in Figure \ref{ck_fig_3}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{ck_fig_3.png}
+    \caption{Left: Best threshold w/o augmentation. Right: Best threshold w/ augmentation}
+    \label{ck_fig_3}
+\end{figure}
+
+Often, a value between the two “best” values actually produced the best results. In the case of Figure \ref{ck_fig_4}, the best threshold when augmentation was not used as 0.1 (top), and the best threshold when augmentation was used was 5.5 (bottom). The top plot shows extreme overprediction of anomalies while the bottom misses the leftmost anomaly and a smaller anomaly in the middle. The middle plot, using a hand-selected threshold of 0.5, successfully finds the anomalies without overpredicting.
+
+Overall, these results suggest that the model learned the structure of the synthesized PPG data well and is able to reliably predict anomalies when a suitable threshold is chosen. However, finding a systematic way of selecting a good threshold proves more challenging.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{ck_fig_4.png}
+    \caption{A threshold value between the two ostensible best values produces better results than either}
+    \label{ck_fig_4}
+\end{figure}
 
 \subsection{Electric Vehicle Drive Cycle}
-Here is the dataset...
+\subsubsection{Vehicle Speed}
+Figure \ref{aj_fig__3} shows the synthesized and normalized test dataset to evaluate the VAE + LSTM model to detect anomalies within vehicle speed. Random data points were selected and a speed spike of 20 to 40 mph were introduced to simulate an actual spike in vehicle speed that wouldn’t normally occur during a regular drive cycle. The goal was to fine tune the model to be able to detect just the 5 red dots (speed spikes) that are visible in the figure.
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_3.png}
+    \caption{Vehicle Speed with introduced anomalies (spikes in speed)}
+    \label{aj_fig__3}
+\end{figure}
+
+The results of Figure (\ref{aj_fig__4}) showcase an overdetection of anomalies within the dataset as showcased by the green lines in the figure. Although this has been a common issue amongst all tested datasets, in this case, the variations in speed demonstrate realistic changes that are fairly noisy - which can be difficult to separate from a real anomaly unless further tuning is performed. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_4.png}
+    \caption{Results of VAE + LSTM Anomaly Detection for Vehicle speed}
+    \label{aj_fig__4}
+\end{figure}
+
+\subsubsection{Battery Voltage}
+Figure \ref{aj_fig__5} shows the synthesized and normalized test dataset to evaluate the VAE + LSTM model to detect anomalies for battery pack voltage. In the context of this experiment, anomalies in battery voltage are simulated by introducing sudden drops in the voltage levels. The drop in voltage is simulated by subtracting a random value (e.g., between 5V to 10V) from the current voltage at the selected anomaly points - which are above the realistic thresholds of a voltage drop during regular operation.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_5.png}
+    \caption{Battery Pack Voltage with introduced anomalies (sudden drops in voltage)}
+    \label{aj_fig__5}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{aj_fig_6.png}
+    \caption{Results of VAE + LSTM Anomaly Detection for Battery Pack Voltage}
+    \label{aj_fig__6}
+\end{figure}
+
+As with the previous results, this dataset also showcases an overdetection of anomalies with some anomalies on the lower range going undetected (lack of green lines after time = 20,000, where at least 2 are expected). 
 
 \section{Conclusion}% a little of last page
 Here is a conclusion...
