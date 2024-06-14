@@ -14,6 +14,7 @@
 
 \graphicspath{{figures/}} %set folder for figures
 
+
 \begin{document}
 
 \title{Anomaly Detection for Time Series Data using VAE-LSTM Model}
@@ -36,9 +37,11 @@
 }
 
 \maketitle
+\thispagestyle{plain}
+\pagestyle{plain}
 
 \begin{abstract}
-Here is an abstract...
+    This paper presents an approach for detecting anomalies in time series data using a hybrid Variational Autoencoder (VAE) and Long Short-Term Memory (LSTM) model. The model leverages the VAE's ability to condense data into a lower-dimensional latent space and the LSTM's capacity for capturing temporal dependencies, enabling precise anomaly detection. Our approach is evaluated on three distinct datasets: Inertial Measurement Unit (IMU) data, synthesized Photoplethysmography (PPG) signals, and Electric Vehicle (EV) drive cycle data. The proposed VAE-LSTM model demonstrates its efficacy in identifying motion artifacts in health monitoring, speed irregularities, and battery voltage anomalies in EVs. Experimental results highlight the model's potential in various applications, though further refinement in thresholding methods and loss functions is suggested to enhance robustness and accuracy.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -46,11 +49,13 @@ Anomaly Detection, VAE, LSTM, Time Series Data, IMU, PPG, EV Drive Cycle, Deep L
 \end{IEEEkeywords}
 
 \section{Introduction}
-\IEEEPARstart{T}{his} is an introduction...
+Anomalies, often referred to as outliers, are patterns in data that do not conform to a well-defined notion of normal behavior. However, anomalies are not always well-defined, and from the human eye, they may be unnoticeable. In this case, how do you find the problem? This paper dives into a technique for detecting anomalies in time series data by predicting what should happen to the data next. A model is trained to learn the distribution of the data and witness how temporal information may very this distribution.
+
+A VAE is a deep learning model that condenses information into a lower dimensional space than it started as. The idea behind this is that information may be sparse and be difficult to find important features, but this latent space may reduce the sparsity. This latent space can be taken advantage of by making temporal predictions prior to reconstructing the signal. LSTM models contain memory units within their layers to utilize the past and present for future predictions. By predicting on the latent space, data could be more easily interpreted for the defined model before reconstructing the new signal. If the predicted signal is far from what it is, this is a good indication that an anomaly may exist.
 
 Health data is often corrupted by motion artifacts. This is especially true for health data gathered from wearable devices, which are proliferating and an active area of research \cite{conor_ref}. If the health data is to be used to make accurate and useful predictions, it needs to be an accurate representation of the measured variables. Where motion artifacts are present, even if the majority of the data is accurate, the algorithms making use of the data could produce flawed predictions, with potentially serious consequences. Therefore, the ability to systematically identify motion artifacts and other anomalies is of great value. Suspect data can be flagged, or algorithms which focus on reliable data segments can be developed. Areas which would especially benefit from this capability are those involving highly regular time-series data, such as cardiovascular monitoring, sleep disorder analysis, and photo plethysmographs (PPGs), the last of which is one of the main focuses of this paper.
 
-Anomaly detection in electric vehicles (EV) can be extremely useful for ensuring the reliability, safety, and efficiency of EVs. Identifying deviations from normal patterns, it helps in early detection of potential issues, preventing costly breakdowns and ensuring optimal performance. While there are a wide variety of applications within the EV space, this report choses to focus on the usage of anomaly detection for vehicle speed and battery voltage as examples.
+Anomaly detection in EVs can be extremely useful for ensuring the reliability, safety, and efficiency of EVs. Identifying deviations from normal patterns, it helps in early detection of potential issues, preventing costly breakdowns and ensuring optimal performance. While there are a wide variety of applications within the EV space, this report choses to focus on the usage of anomaly detection for vehicle speed and battery voltage as examples.
 
 Anomaly detection for vehicle speed has several potential applications, including:
 
@@ -124,7 +129,7 @@ Clean data is relatively simple to create as large motion will appear as spikes 
 Training with the IMU data follows the same strategy as listed above. The dataset is a combination of multiple channels, but each channel is normalized before training. It’s possible to use each channel to predict anomalies shared between them, but for the sake of time, single channel training is focused on.
 
 \subsection{Synthesized Photoplethysmography Dataset}
-Photoplethysmography (PPG) is a non-invasive optical technique used to detect blood volume changes in tissue. Light is beamed into tissue in one area and light intensity is detected in a different area; as blood is the dominant light absorber in tissue, changes in the intensity correlate with changes in blood volume. Different wavelengths of light are absorbed differently by oxygenated and deoxygenated hemoglobin, and different light source-detector separation distances probe different tissue depths. By using multiple wavelengths and detectors in a single run, the resultant time-series signals are rich in information about blood volume and oxygenation in different areas of the tissue.
+Pulse Oximetry is a non-invasive optical technique used to detect blood volume changes in tissue. Light is projected into tissue in one area and light intensity is detected in a different area; as blood is the dominant light absorber in tissue, changes in the intensity correlate with changes in blood volume. Different wavelengths of light are absorbed differently by oxygenated and deoxygenated hemoglobin, and different light source-detector separation distances probe different tissue depths. By using multiple wavelengths and detectors in a single run, the resultant time-series signals are rich in information about blood volume and oxygenation in different areas of the tissue.
 
 The data used in this experiment is synthesized using parameters taken from in-vivo data gathered from pregnant sheep. The time-varying frequency trace and the pulse shapes were taken directly from the sheep-data, while the magnitudes of the different components were determined via Monte Carlo simulation. Thus, the data strongly resembles in-vivo data but is free from anomalies and is suitable for training the VAE-LSTM model. There are four sets of time-series data, each with 10 channels, corresponding to 5 detectors and two wavelengths.
 
