@@ -1208,14 +1208,14 @@ class VAE_LSTM(nn.Module):
         #plt.vlines(t[detected_anomalies], ymin=np.min(test_data), ymax=np.max(test_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=1)
 
         if anomalies is not None:
-           plt.vlines(t[anom_loc], ymin=np.min(show_data), ymax=np.max(show_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05)
-        plt.vlines(t[detected_anomalies], ymin=np.min(show_data), ymax=np.max(show_data), colors='g', linestyles='solid', label="Detected Anomalies", alpha=0.5, linewidth=0.1)
+           plt.vlines(t[anom_loc], ymin=np.min(show_data), ymax=np.max(show_data), colors='r', linestyles='solid', label="True Anomalies", alpha=0.5, linewidth=0.05, zorder = 4)
+        plt.vlines(t[detected_anomalies], ymin=np.min(show_data), ymax=np.max(show_data), colors='g', linestyles='dashed', label="Detected Anomalies", alpha=1, linewidth=0.1, zorder = 3)
 
         if normalize:
             test_data = show_data
 
-        plt.plot(t, test_data, linewidth=2.5, color='black')
-        plt.plot(t, test_data, label="Data", color='b')
+        plt.plot(t, test_data, linewidth=2.5, color='black', zorder = 1)
+        plt.plot(t, test_data, label="Data", color='b', zorder = 2)
 
         
         # plt.axvline(x=t[detected_anomalies[0]], color='g', linestyle='solid', label="Detected Anomalies")
@@ -1236,12 +1236,16 @@ class VAE_LSTM(nn.Module):
         plt.ylabel("Value")
 
         # Create custom legend handles
-        true_anomalies_handle = mlines.Line2D([], [], color='r', linewidth=2, label='True Anomalies')
-        detected_anomalies_handle = mlines.Line2D([], [], color='g', linewidth=2, label='Detected Anomalies')
+        if anomalies is not None:
+            true_anomalies_handle = mlines.Line2D([], [], color='r', linewidth=2, label='True Anomalies')
+        detected_anomalies_handle = mlines.Line2D([], [], color='g', linewidth=2, linestyle='dashed', label='Detected Anomalies')
         data_handle = mlines.Line2D([], [], color='b', linewidth=2.5, label='Data')
 
         # Add the custom handles to the legend
-        plt.legend(handles=[true_anomalies_handle, detected_anomalies_handle, data_handle])
+        if anomalies is not None:
+            plt.legend(handles=[true_anomalies_handle, detected_anomalies_handle, data_handle])
+        else:
+            plt.legend(handles=[detected_anomalies_handle, data_handle])
 
         if path is not None:
             folder = os.path.dirname(path)
