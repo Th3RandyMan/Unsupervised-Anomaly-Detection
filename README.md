@@ -1,8 +1,6 @@
 # Unsupervised-Anomaly-Detection
 Project for detecting anomalies without ground truth.
 
-## Overview
-
 ## Requirements
 * Numpy
 * PyTorch
@@ -26,9 +24,10 @@ All tuning can be done by giving parameters to already implemented functions. Fo
 * Number of n_kernels and n_neurons can be adjusted for the VAE and LSTM.
 
 ## Results
+A paper was written for this project, formatted using latex, and stored within a folder as a pdf in this repository.
 
 ## Acknowledgements
-This project was completed for EEC 289A at UC Davis, Spring 2024, by Randall Fowler and
+This project was completed for EEC 289A at UC Davis, Spring 2024, by Randall Fowler, Conor King, and Ajay Suresh.
 
 ## Continuation
 
