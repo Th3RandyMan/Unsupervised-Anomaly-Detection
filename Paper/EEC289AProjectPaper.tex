@@ -48,6 +48,8 @@ Anomaly Detection, VAE, LSTM, Time Series Data, IMU, PPG, EV Drive Cycle, Deep L
 \section{Introduction}
 \IEEEPARstart{T}{his} is an introduction...
 
+Health data is often corrupted by motion artifacts. This is especially true for health data gathered from wearable devices, which are proliferating and an active area of research \cite{conor_ref}. If the health data is to be used to make accurate and useful predictions, it needs to be an accurate representation of the measured variables. Where motion artifacts are present, even if the majority of the data is accurate, the algorithms making use of the data could produce flawed predictions, with potentially serious consequences. Therefore, the ability to systematically identify motion artifacts and other anomalies is of great value. Suspect data can be flagged, or algorithms which focus on reliable data segments can be developed. Areas which would especially benefit from this capability are those involving highly regular time-series data, such as cardiovascular monitoring, sleep disorder analysis, and photo plethysmographs (PPGs), the last of which is one of the main focuses of this paper.
+
 Anomaly detection in electric vehicles (EV) can be extremely useful for ensuring the reliability, safety, and efficiency of EVs. Identifying deviations from normal patterns, it helps in early detection of potential issues, preventing costly breakdowns and ensuring optimal performance. While there are a wide variety of applications within the EV space, this report choses to focus on the usage of anomaly detection for vehicle speed and battery voltage as examples.
 
 Anomaly detection for vehicle speed has several potential applications, including:
@@ -115,12 +117,16 @@ Training was conducted with varying batch sizes and number of epochs between dif
 To explore the robust design of the detection model, three datasets are used for training and testing. IMU dataset consists of motion recordings from multiple sensors to detect movement or changes to the monitoring system. Synthesized PPG data is created from simulating tissue models and aims to detect motion, electromagnetic interference, and other variations of noise. The Electric Vehicle Drive Cycle dataset is synthesized based on referenced data from a Cadillac EV that includes time series data for vehicle speed and battery voltage.
 
 \subsection{Inertial Measurement Unit Dataset}
-Here is the dataset...
+IMU dataset consists of in-vivo measurements of a device placed on the abdomen of a pregnant woman laying down. The recorded motion comes from 4 sensors with 3 axes each, and all anomalies will consist of movement from the mother, baby, and pressure added to the device. Breathing will be part of the natural signal, but any shift of position could create artifacts. 
+
+Clean data is relatively simple to create as large motion will appear as spikes or y-axis offset, so clean data can be gathered from clipping dirty data, interpolating over the noise, or just making a constant signal with noise. To preserve the in-vivo aspects of the dirty signal, the clean signal is just a clipping of the original, but interpolation would help to preserve length of training. Since training memory is reset per batch, the length of the original signal does not need to be long.
+
+Training with the IMU data follows the same strategy as listed above. The dataset is a combination of multiple channels, but each channel is normalized before training. It’s possible to use each channel to predict anomalies shared between them, but for the sake of time, single channel training is focused on.
 
 \subsection{Synthesized Photoplethysmography Dataset}
 Photoplethysmography (PPG) is a non-invasive optical technique used to detect blood volume changes in tissue. Light is beamed into tissue in one area and light intensity is detected in a different area; as blood is the dominant light absorber in tissue, changes in the intensity correlate with changes in blood volume. Different wavelengths of light are absorbed differently by oxygenated and deoxygenated hemoglobin, and different light source-detector separation distances probe different tissue depths. By using multiple wavelengths and detectors in a single run, the resultant time-series signals are rich in information about blood volume and oxygenation in different areas of the tissue.
 
-The data used in this experiment is synthesized using parameters taken from in-vivo data gathered from pregnant sheep. The time-varying frequency trace and the pulse shapes were taken directly from the sheep-data, while the magnitudes of the different components were determined via Montecarlo simulation. Thus, the data strongly resembles in-vivo data but is free from anomalies and is suitable for training the VAE-LSTM model. There are four sets of time-series data, each with 10 channels, corresponding to 5 detectors and two wavelengths.
+The data used in this experiment is synthesized using parameters taken from in-vivo data gathered from pregnant sheep. The time-varying frequency trace and the pulse shapes were taken directly from the sheep-data, while the magnitudes of the different components were determined via Monte Carlo simulation. Thus, the data strongly resembles in-vivo data but is free from anomalies and is suitable for training the VAE-LSTM model. There are four sets of time-series data, each with 10 channels, corresponding to 5 detectors and two wavelengths.
 
 To test the model, the same data is augmented with artificial anomalies. The anomalies are short intervals with a DC shift. The number of anomalies, their positioning, their duration, and their intensity are all determined probabilistically, and are varied slightly between channels, also probabilistically. The data-points affected by the DC shifts are the true anomalies against which the trained VAE-LSTM model is tested. Figure \ref{ck_fig_1} provides an example of the clean data and the anomalous data, with true anomalies highlighted in red.
 
@@ -151,10 +157,68 @@ This dataset represents the voltage levels of an EV battery over a drive cycle. 
 \end{figure}
 
 \section{Results}
-Here are the results...
+An issue seen by each of the datasets would relate to the method for thresholding. Methods for determining the error threshold were found by using the mean and standard deviation of each of the signals, but it was determined on each signal separately. This meant that for a signal with little to no anomalies, the error threshold would be very small and over detect the number of anomalies.
+
+In most results, the augmented F1 score used for determined the error threshold proved to be better than the normal F1 score. This may be flawed due to the issues in training and occasional large number of anomalies detected, but it did prove to be useful. 
 
 \subsection{Inertial Measurement Unit}
-Here is the dataset...
+For the IMU, a more extensive search was performed to find any changes amongst batch size, number of epochs, and size of the latent space. It appeared that changing the size of the latent space did not improve the predictions, but this should be investigated again with improvements to the loss functions. All examples provided will have a latent space of 6 if not specified. Note that the anomalies were labeled manually by what was thought to be issues in the data. This could vary the F1 scoring, but detected anomalies could also be visually compared in this paper.
+
+Figure \ref{rf_fig_1} provides the F1 scoring gathered from the evaluation, and a large threshold appears to have better results. This should be expected as Figure \ref{rf_fig_2} shows a few large anomalies present, and with larger anomalies, the threshold should be large to separate the normal signal error to the large changes. The ground truth anomalies may be mismarked as the detected anomalies do appear to have good results. These results come from a model trained with 20 epochs and a batch size of 32, and the best augmented F1 score is used to find the threshold.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_1.png}
+    \caption{}
+    \label{rf_fig_1}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_2.png}
+    \caption{}
+    \label{rf_fig_2}
+\end{figure}
+
+For the next example, the same test file was used with the same parameters except the latent space was increased to 12. Figures \ref{rf_fig_3} and \ref{rf_fig_4} show the F1 score and anomaly plot respectively. The F1 score does look vastly smaller than the one in Figure \ref{rf_fig_1}, and this would be due to the poor precision of the model. It is thought that the model did not train well, and most windows had a less deterministic error distribution. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_3.png}
+    \caption{}
+    \label{rf_fig_3}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_4.png}
+    \caption{}
+    \label{rf_fig_4}
+\end{figure}
+
+The last example retains the batch size of 32 and latent space of 6, but 100 epochs were used for training the model. Figures \ref{rf_fig_5} to \ref{rf_fig_7} display the results of this model as the scoring has a slightly similar shape, but Figures \ref{rf_fig_6} and \ref{rf_fig_7} compare the normal scoring to augmented. Normal scoring does not perform well as a lower threshold has the larger score. Intuitively, the larger threshold should usually provide better anomaly detection unless there are many anomalies present. Augmented scoring does have similar results to \ref{rf_fig_2}, but still does not perform as well.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_5.png}
+    \caption{}
+    \label{rf_fig_5}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_6.png}
+    \caption{}
+    \label{rf_fig_6}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{rf_fig_7.png}
+    \caption{}
+    \label{rf_fig_7}
+\end{figure}
+
 
 \subsection{Synthesized Photoplethysmography}
 The performance of the VAE-LSTM model on the synthesized PPG data with artificial anomalies was somewhat varied. As expected, it depends enormously on the chosen threshold value.
@@ -227,11 +291,18 @@ Figure \ref{aj_fig__5} shows the synthesized and normalized test dataset to eval
 
 As with the previous results, this dataset also showcases an overdetection of anomalies with some anomalies on the lower range going undetected (lack of green lines after time = 20,000, where at least 2 are expected). 
 
-\section{Conclusion}% a little of last page
-Here is a conclusion...
+\section{Conclusion}
+The architecture provided shows promise for performing well when detecting anomalies. It appears that the model training lacks stability due to the VAE loss function. Occasionally, the model trains well and the error distribution appears to be good. In the event the model performs well, thresholding is another issue to be addressed. Instead of optimizing the threshold for every signal, thresholding should be determined with a test set to find the minimum error that an anomaly occurs at. These results are not satisfactory, but a path is clear to achieve desirable performance.
 
 \subsection{Future Work}
-Here is some future work...
+Many of the issues in this project have been noted throughout the paper, and for future work, these issues would need to be addressed. Loss function should be further explored and resolve the KL divergence term of the VAE loss. BCE could replace the reconstruction error for both models, but both sides of the model would need to be scaled between 0 and 1. The problem with this scaling would be in the final output of the system as the original signal needs to be scaled properly for every signal.
+
+Evaluation could be improved to compare accuracy, F1 score, and display the error distribution for each sample in the signal. This could provide more intuition as F1 score is not an insightful metric, but it could still be useful for optimizing the threshold. The threshold would also need to be searched over many test signals and left as a constant. Currently, the threshold varies per signal, and this is not a good method with a varying number of anomalies. These anomalies should be better labeled, and this can be done by noting the region and interpolating if starting with dirty data. Some datasets will be difficult to remove or add artifacts, but this could be a project by itself.
+
+One mistake recently found would relate to the data used in the LSTM as it currently does not predict new windows. The mistake was that it tries to learn the mold of the latent space and scale errors larger if they are noticed to be out of the distribution. This may be a good strategy, but it contradicts temporal information by outputting the same input at the same time. A set of linear layers could do this, so an improvement would be to fix the output data comparison to be the next window rather than current.
+
+This system is fully capable of handling multichannel inputs, so predicting anomalies over multiple channels could be useful. It has not been explored and their may be bugs in the current implementation.
+
 
 \section*{Acknowledgment}
 The authors would like to thank Dr. Yubei Chen for his guidance and support on this course project.
